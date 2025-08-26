@@ -1,0 +1,75 @@
+
+services:
+  backend:
+    image: timetable_backend
+    build:
+      context: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: ${DB_PORT}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    ports:
+      - "8888:8000"
+    volumes:
+      - ./backend:/app
+      - ./common:/app/common
+
+  db:
+    image: postgres:latest
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_DB: ${DB_NAME}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  bot:
+    image: timetable_tg_bot
+    build:
+      context: ./bot
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: ${DB_PORT}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      BOT_TOKEN: ${BOT_TOKEN}
+      ADMIN_ID: ${ADMIN_ID}
+    volumes:
+      - ./bot:/app
+      - ./common:/app/common
+
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+      SECRET_KEY: ${SECRET_KEY}
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./admin:/app
+      - ./common:/app/common
+
+
+volumes:
+  db_data:
