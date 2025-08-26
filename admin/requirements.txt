@@ -1,0 +1,9 @@
+Flask==2.3.3
+Flask-Admin==1.6.1
+Flask-SQLAlchemy==3.0.5
+SQLAlchemy==2.0.23
+psycopg2-binary==2.9.9
+Werkzeug==2.3.7
+wtforms==3.0.1
+python-dotenv==1.0.0
+flask-basicauth
