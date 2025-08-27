@@ -102,6 +102,7 @@ class Dayboard(Base):
     day_id = Column(Integer, ForeignKey("days.id"), nullable=False)
     place_id = Column(Integer, ForeignKey("places.id"), nullable=False)
     type_id = Column(Integer, ForeignKey("types.id"), nullable=False)
+    podgroup = Column(Integer, nullable=False, default=0)
 
     # ===== связи =====
     subject_rel = relationship("Subject", back_populates="dayboards")

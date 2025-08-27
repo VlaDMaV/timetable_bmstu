@@ -40,6 +40,7 @@ class DayboardWithAll(BaseModel):
     end_time: str
     place: str
     type: str
+    podgroup: int
 
     class Config:
         orm_mode = True
@@ -89,6 +90,7 @@ def filter_dayboard(
     day: Optional[str] = Query(None),      # по имени дня
     group: Optional[str] = Query(None),    # по названию группы
     ord: Optional[int] = Query(None),      # знаменатель/числитель
+    podgroup: Optional[int] = Query(None),
     db: Session = Depends(get_db)
 ):
     DayAlias = aliased(models.Day)
@@ -109,6 +111,8 @@ def filter_dayboard(
         query = query.join(DayAlias, models.Dayboard.day_rel).filter(DayAlias.ord == ord)
     if group is not None:
         query = query.join(models.Group, models.Dayboard.group_rel).filter(models.Group.name == group)
+    if podgroup is not None:
+        query = query.filter(models.Dayboard.podgroup == podgroup)
 
 
     results = query.all()
@@ -126,6 +130,7 @@ def filter_dayboard(
             end_time=d.time_rel.end_time,
             place=d.place_rel.name, 
             type=d.type_rel.name, 
+            podgroup=d.podgroup,
         )
         output.append(obj)
 

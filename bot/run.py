@@ -8,6 +8,7 @@ from threading import Thread, Event
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from aiogram import Bot, Dispatcher
+from aiogram.exceptions import TelegramMigrateToChat
 from common.database import models
 from watchfiles import watch
 from sqlalchemy.exc import OperationalError
@@ -29,6 +30,34 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+async def safe_send(bot, tg_id, text, **kwargs):
+    db = SessionLocal()
+    try:
+        chat_id = int(tg_id) if tg_id is not None else None
+        if not chat_id:
+            return
+
+        await bot.send_message(chat_id, text, **kwargs)
+    except TelegramMigrateToChat as e:
+        new_id = e.migrate_to_chat_id
+
+        existing_user = db.query(models.User).filter_by(tg_id=new_id).first()
+        if existing_user:
+            old_user = db.query(models.User).filter_by(tg_id=tg_id).first()
+            if old_user:
+                db.delete(old_user)
+                db.commit()
+        else:
+            db.query(models.User).filter_by(tg_id=tg_id).update({"tg_id": new_id})
+            db.commit()
+
+        await bot.send_message(new_id, text, **kwargs)
+    except Exception as e:
+        print(f"Ошибка при отправке сообщения {tg_id}: {e}")
+    finally:
+        db.close()
 
 
 async def send_daily_timetable(bot):
@@ -75,7 +104,8 @@ async def send_daily_timetable(bot):
             )
 
             for i in range(0, len(message_text), 4000):
-                await bot.send_message(
+                await safe_send(
+                    bot,
                     user.tg_id,
                     message_text[i:i+4000],
                     parse_mode="HTML",
