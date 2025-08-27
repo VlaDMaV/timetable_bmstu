@@ -58,7 +58,7 @@ def get_group_keyboard() -> InlineKeyboardBuilder:
     with next(get_db()) as db:  
         groups = db.query(models.Group).order_by(models.Group.name).all()
         for group in groups:
-            kb.button(text=group.name, callback_data=f"choose_group:{group.id}")
+            kb.button(text=cs.groups.get(group.name, group.name), callback_data=f"choose_group:{group.id}")
     kb.adjust(2)
     return kb.as_markup()
 
@@ -175,6 +175,10 @@ async def subscribe_user(callback: CallbackQuery):
 
 @router.callback_query(F.data == "unsubscribe")
 async def unsubscribe_user(callback: CallbackQuery):
+    if callback.message.chat.type != "private":
+        await callback.answer("❌ Отписка доступна только в личных сообщениях с ботом.\nЕсли вы хотите отписать группу от рассылки, напишите @vladmav_11.", show_alert=True)
+        return
+
     db = SessionLocal()
     try:
         user = db.query(models.User).filter(models.User.tg_id == callback.message.chat.id).first()
@@ -218,7 +222,7 @@ async def choose_group(callback: CallbackQuery):
             user_group.group_id = chosen_group.id
             db.commit()
             await callback.message.edit_text(
-                f"✅ Для группы <b>{user_group.title}</b> выбрана учебная группа <b>{chosen_group.name}</b>",
+                f"✅ Для группы <b>{user_group.title}</b> выбрана учебная группа <b>{cs.groups.get(chosen_group.name, chosen_group.name)}</b>",
                 parse_mode="HTML",
                 reply_markup=kb.back_to_main
             )
@@ -228,7 +232,7 @@ async def choose_group(callback: CallbackQuery):
             user.group_id = chosen_group.id
             db.commit()
             await callback.message.edit_text(
-                f"✅ Ваша учебная группа сохранена: <b>{chosen_group.name}</b>",
+                f"✅ Ваша учебная группа сохранена: <b>{cs.groups.get(chosen_group.name, chosen_group.name)}</b>",
                 parse_mode="HTML",
                 reply_markup=kb.back_to_main
             )
@@ -240,7 +244,8 @@ async def choose_group(callback: CallbackQuery):
 async def get_today_timetable(callback: CallbackQuery):
     db = next(get_db())
 
-    now = datetime.now()
+    moscow_tz = pytz.timezone("Europe/Moscow")
+    now = datetime.now(moscow_tz)
     year, week_number, weekday = now.isocalendar()
     week_ord = (week_number + 1) % 2
 
@@ -314,7 +319,8 @@ async def get_today_timetable(callback: CallbackQuery):
 async def get_tomorrow_timetable(callback: CallbackQuery):
     db = next(get_db())
 
-    now = datetime.now()
+    moscow_tz = pytz.timezone("Europe/Moscow")
+    now = datetime.now(moscow_tz)
     year, week_number, weekday = now.isocalendar()
     week_ord = (week_number + 1) % 2
 
@@ -391,7 +397,8 @@ async def get_tomorrow_timetable(callback: CallbackQuery):
 async def get_weekly_timetable(callback: CallbackQuery):
     db = next(get_db())
 
-    now = datetime.now()
+    moscow_tz = pytz.timezone("Europe/Moscow")
+    now = datetime.now(moscow_tz)
     year, week_number, weekday = now.isocalendar()
     week_ord = (week_number + 1) % 2
 
@@ -541,6 +548,10 @@ async def current_lesson(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("change_group"))
 async def current_lesson(callback: CallbackQuery):
+    if callback.message.chat.type != "private":
+        await callback.answer("❌ Смена группы доступна только в личных сообщениях с ботом.\nЕсли вы хотите сменить группу от рассылки, напишите @vladmav_11.", show_alert=True)
+        return
+
     db = next(get_db())
 
     chat_id = callback.message.chat.id
@@ -620,3 +631,12 @@ async def get_broadcast_message(message: Message, state: FSMContext):
 
     await message.answer(f"Рассылка завершена ✅ Отправлено {sent_count} пользователям.")
     await state.clear()
+
+
+@router.message()
+async def catch_all_messages(message: Message):
+    await message.answer(
+            text=cs.welcome_text,
+            parse_mode="HTML",
+            reply_markup=kb.main_menu
+        )

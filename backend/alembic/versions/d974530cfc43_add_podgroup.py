@@ -1,8 +1,8 @@
-"""init 2
+"""add podgroup
 
-Revision ID: cc0da2fb7aa6
-Revises: ac02c9118eb0
-Create Date: 2025-08-26 11:09:35.547860
+Revision ID: d974530cfc43
+Revises: d920e5d29d3f
+Create Date: 2025-08-27 16:41:28.533584
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'cc0da2fb7aa6'
-down_revision: Union[str, None] = 'ac02c9118eb0'
+revision: str = 'd974530cfc43'
+down_revision: Union[str, None] = 'd920e5d29d3f'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -67,7 +67,7 @@ class TeacherAdmin(ModelView):
     column_labels = {'full_name': 'ФИО преподавателя'}
 
 class DayboardAdmin(ModelView):
-    column_list = ['id', 'subject_rel', 'group_rel', 'teacher_rel', 'day_rel', 'time_rel', 'place_rel', 'type_rel']
+    column_list = ['id', 'subject_rel', 'group_rel', 'teacher_rel', 'day_rel', 'time_rel', 'place_rel', 'type_rel', 'podgroup']
     column_labels = {
         'subject_rel': 'Предмет',
         'group_rel': 'Группа', 
@@ -75,7 +75,8 @@ class DayboardAdmin(ModelView):
         'day_rel': 'День',
         'time_rel': 'Время',
         'place_rel': 'Аудитория',
-        'type_rel': 'Тип занятия'
+        'type_rel': 'Тип занятия',
+        'podgroup': 'Подгруппа'
     }
     form_ajax_refs = {
         'subject_rel': {'fields': ['name']},
@@ -86,6 +87,17 @@ class DayboardAdmin(ModelView):
         'place_rel': {'fields': ['name']},
         'type_rel': {'fields': ['name']}
     }
+    column_sortable_list = [
+        'id',
+        ('subject_rel', 'subject_rel.name'),
+        ('group_rel', 'group_rel.name'),
+        ('teacher_rel', 'teacher_rel.full_name'),
+        ('day_rel', 'day_rel.name'),
+        ('time_rel', 'time_rel.start_time'),
+        ('place_rel', 'place_rel.name'),
+        ('type_rel', 'type_rel.name'),
+        'podgroup'
+    ]
 
 class UserAdmin(ModelView):
     column_list = ['id', 'tg_id', 'username', 'group_rel', 'is_active', 'title']
