@@ -493,8 +493,7 @@ async def current_lesson(callback: CallbackQuery):
         )
         return
 
-    WEEKDAYS_REVERSE = {v: k for k, v in cs.WEEKDAYS.items()}
-    day_name = WEEKDAYS_REVERSE.get(weekday_index, "Monday")
+    day_name = cs.WEEKDAYS.get(weekday_index, "Monday")
 
     week_ord = (now.isocalendar()[1] + 1) % 2
 
@@ -547,7 +546,7 @@ async def current_lesson(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("change_group"))
-async def current_lesson(callback: CallbackQuery):
+async def change_group(callback: CallbackQuery):
     if callback.message.chat.type != "private":
         await callback.answer("❌ Смена группы доступна только в личных сообщениях с ботом.\nЕсли вы хотите сменить группу от рассылки, напишите @vladmav_11.", show_alert=True)
         return
