@@ -85,14 +85,15 @@ async def start(message: Message):
                 tg_id=message.chat.id,
                 username=username,
                 title=title,
-                group_id=None
+                group_id=None,
+                is_active=0
             )
             db.add(new_group_user)
             db.commit()
             db.refresh(new_group_user)
 
             await message.answer(
-                text=cs.reg_text.format(title=title),
+                text=cs.reg_text.format(title=username),
                 reply_markup=get_group_keyboard(),
                 parse_mode="HTML"
             )
@@ -112,14 +113,15 @@ async def start(message: Message):
                 tg_id=tg_id,
                 username=username,
                 title=title,
-                group_id=None
+                group_id=None,
+                is_active=0
             )
             db.add(new_user)
             db.commit()
             db.refresh(new_user)
 
             await message.answer(
-                text=cs.reg_text.format(title=title),
+                text=cs.reg_text.format(title=username),
                 reply_markup=get_group_keyboard()
             )
             return
@@ -450,7 +452,7 @@ async def get_weekly_timetable(callback: CallbackQuery):
     await callback.message.edit_text(
         f"Расписание на неделю:\n\n{timetable_text}"
         f"Группа: <b>{group_display_name}</b>\n"
-        f"Неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}",
+        f"{week_number-35} неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}",
         parse_mode="HTML",
         reply_markup=kb.back_to_main
     )
