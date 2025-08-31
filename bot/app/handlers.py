@@ -311,7 +311,7 @@ async def get_today_timetable(callback: CallbackQuery):
     await callback.message.edit_text(
         f"Расписание на сегодня:\n\n{timetable_text}"
         f"Группа: <b>{group_display_name}</b>\n"
-        f"Неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}",
+        f"{week_number-35} неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}",
         parse_mode="HTML",
         reply_markup=kb.back_to_main
     )
@@ -324,7 +324,6 @@ async def get_tomorrow_timetable(callback: CallbackQuery):
     moscow_tz = pytz.timezone("Europe/Moscow")
     now = datetime.now(moscow_tz)
     year, week_number, weekday = now.isocalendar()
-    week_ord = (week_number + 1) % 2
 
     if weekday == 6: 
         await callback.message.edit_text(
@@ -334,11 +333,16 @@ async def get_tomorrow_timetable(callback: CallbackQuery):
         )
         return
     elif weekday == 7:
+        if week_number==0:
+            week_number+=1
+        else:
+            week_number+=1
         weekday = 1
     else:
         weekday += 1
 
-    week_day = cs.WEEKDAYS.get(weekday)
+    week_day = cs.WEEKDAYS.get(weekday) 
+    week_ord = (week_number + 1) % 2
 
     chat_id = callback.message.chat.id
     chat_type = callback.message.chat.type
@@ -389,7 +393,7 @@ async def get_tomorrow_timetable(callback: CallbackQuery):
     await callback.message.edit_text(
         f"Расписание на завтра:\n\n{timetable_text}"
         f"Группа: <b>{group_display_name}</b>\n"
-        f"Неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}",
+        f"{week_number-35} неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}",
         parse_mode="HTML",
         reply_markup=kb.back_to_main
     )
