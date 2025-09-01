@@ -12,6 +12,7 @@ main_menu = InlineKeyboardMarkup(inline_keyboard=[
         InlineKeyboardButton(text='📅 На неделю', callback_data='weekly_timetable'),
         InlineKeyboardButton(text='📖 Настройки', callback_data='help')
     ],
+    [InlineKeyboardButton(text='📋 Расписание по преподователям', callback_data='teacher_timetable')]
 ])
 
 
