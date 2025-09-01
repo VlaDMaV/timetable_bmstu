@@ -44,9 +44,9 @@ def format_timetable(data):
                 teacher = l.get('teacher_name', 'Не указан')
 
                 text_lines.append(
-                    f"{i} пара {start_time}–{end_time}\n"
-                    f"{subject_name}\n"
-                    f"({lesson_type})\n"
+                    f"🕒{i} пара {start_time}–{end_time}\n"
+                    f"<b>{subject_name}</b>\n"
+                    f"<i>({lesson_type})</i>\n"
                     f"📍Аудитория: {place}\n"
                     f"Преподаватель: {teacher}\n"
                 )
@@ -67,9 +67,9 @@ def format_timetable(data):
                     teacher = l.get('teacher_name', 'Не указан')
 
                     text_lines.append(
-                        f"{i} пара {start_time}–{end_time}\n"
-                        f"{subject_name}\n"
-                        f"({lesson_type})\n"
+                        f"🕒{i} пара {start_time}–{end_time}\n"
+                        f"<b>{subject_name}</b>\n"
+                        f"<i>({lesson_type})</i>\n"
                         f"📍Аудитория: {place}\n"
                         f"Преподаватель: {teacher}\n"
                     )

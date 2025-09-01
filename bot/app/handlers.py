@@ -134,7 +134,7 @@ async def start(message: Message):
 
 
 @router.callback_query(F.data == "help")
-async def back_to_main(callback: CallbackQuery, state: FSMContext):
+async def help_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     
     db = SessionLocal()
@@ -636,12 +636,3 @@ async def get_broadcast_message(message: Message, state: FSMContext):
 
     await message.answer(f"Рассылка завершена ✅ Отправлено {sent_count} пользователям.")
     await state.clear()
-
-
-@router.message()
-async def catch_all_messages(message: Message):
-    await message.answer(
-            text=cs.welcome_text,
-            parse_mode="HTML",
-            reply_markup=kb.main_menu
-        )
