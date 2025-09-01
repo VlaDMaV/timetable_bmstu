@@ -135,3 +135,27 @@ def filter_dayboard(
         output.append(obj)
 
     return output
+
+
+@app.get("/dayboard/teacher/{full_name}")
+def get_teacher_dayboard(full_name: str, db: Session = Depends(get_db)):
+    teacher = db.query(models.Teacher).filter(models.Teacher.full_name == full_name).first()
+    if not teacher:
+        raise HTTPException(status_code=404, detail="Преподаватель не найден")
+
+    lessons = []
+    for l in teacher.dayboards:
+        lessons.append({
+            "day_name": l.day_rel.name,
+            "ord": l.day_rel.ord,
+            "start_time": l.time_rel.start_time,
+            "end_time": l.time_rel.end_time,
+            "subject_name": l.subject_rel.name,
+            "type": l.type_rel.name,
+            "place": l.place_rel.name,
+            "teacher_name": l.teacher_rel.full_name,
+            "group": l.group_rel.name,
+            "podgroup": l.podgroup,
+        })
+
+    return lessons
