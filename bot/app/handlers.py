@@ -19,7 +19,7 @@ from common.database import models
 from config import config
 import app.keyboards as kb
 import app.text as cs
-from app.utils.utils import format_timetable
+from app.utils.utils import format_timetable, format_teacher_timetable_simple
 
 
 logging.basicConfig(level=logging.INFO)
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
+TEACHERS_PER_PAGE = 5
 
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
@@ -60,6 +61,34 @@ def get_group_keyboard() -> InlineKeyboardBuilder:
         for group in groups:
             kb.button(text=cs.groups.get(group.name, group.name), callback_data=f"choose_group:{group.id}")
     kb.adjust(2)
+    return kb.as_markup()
+
+
+def get_teacher_keyboard(teachers, page: int = 0):
+    kb = InlineKeyboardBuilder()
+
+    start = page * TEACHERS_PER_PAGE
+    end = start + TEACHERS_PER_PAGE
+    page_teachers = teachers[start:end]
+
+    for t in page_teachers:
+        kb.button(text=t.full_name, callback_data=f"teacher:{t.id}")
+    kb.adjust(1)
+
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(("⬅️ Назад", f"teacher_page:{page-1}"))
+    if end < len(teachers):
+        nav_buttons.append(("Вперёд ➡️", f"teacher_page:{page+1}"))
+
+    if nav_buttons:
+        for text, data in nav_buttons:
+            kb.button(text=text, callback_data=data)
+        kb.adjust(len(nav_buttons))
+
+    kb.button(text="🔙 В меню", callback_data="back_to_main")
+    kb.adjust(1)
+
     return kb.as_markup()
 
 
@@ -636,3 +665,68 @@ async def get_broadcast_message(message: Message, state: FSMContext):
 
     await message.answer(f"Рассылка завершена ✅ Отправлено {sent_count} пользователям.")
     await state.clear()
+
+
+@router.callback_query(F.data == "teacher_timetable")
+async def teacher_timetable(callback: CallbackQuery):
+    if callback.message.chat.type != "private":
+        await callback.answer("❌ Доступно только в личных сообщениях.", show_alert=True)
+        return
+
+    db = next(get_db())
+    teachers = db.query(models.Teacher).order_by(models.Teacher.full_name).all()
+    if not teachers:
+        await callback.message.edit_text("❌ В базе нет преподавателей.", parse_mode="HTML")
+        return
+
+    await callback.message.edit_text(
+        "Выберите преподавателя:",
+        parse_mode="HTML",
+        reply_markup=get_teacher_keyboard(teachers, page=0)
+    )
+
+
+@router.callback_query(F.data.startswith("teacher_page:"))
+async def paginate_teachers(callback: CallbackQuery):
+    page = int(callback.data.split(":")[1])
+
+    db = next(get_db())
+    teachers = db.query(models.Teacher).order_by(models.Teacher.full_name).all()
+
+    await callback.message.edit_text(
+        "Выберите преподавателя:",
+        parse_mode="HTML",
+        reply_markup=get_teacher_keyboard(teachers, page=page)
+    )
+
+
+@router.callback_query(F.data.startswith("teacher:"))
+async def show_teacher_timetable(callback: CallbackQuery):
+    teacher_id = int(callback.data.split(":")[1])
+
+    db = next(get_db())
+    teacher = db.query(models.Teacher).filter(models.Teacher.id == teacher_id).first()
+    if not teacher:
+        await callback.answer("Преподаватель не найден", show_alert=True)
+        return
+
+    base_url = f"http://backend:8000/dayboard/teacher/{teacher.full_name}"
+
+    async with httpx.AsyncClient() as client:
+        r = await client.get(base_url)
+
+    if r.status_code != 200:
+        await callback.message.edit_text(
+            f"❌ Ошибка при получении расписания ({r.status_code})",
+            parse_mode="HTML"
+        )
+        return
+
+    timetable_data = r.json()
+    timetable_text = format_teacher_timetable_simple(timetable_data)
+
+    await callback.message.edit_text(
+        f"<b>{teacher.full_name}</b>\n\n{timetable_text}",
+        parse_mode="HTML",
+        reply_markup=kb.back_to_main
+    )
