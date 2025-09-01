@@ -66,6 +66,7 @@ async def send_daily_timetable(bot):
     try:
         users = db.query(models.User).filter(models.User.is_active == 1).all()
         now = datetime.now(ZoneInfo("Europe/Moscow"))
+        year, week_number, weekday = now.isocalendar()
         weekday_index = now.isoweekday()  # 1–7
         weekday_name = cs.WEEKDAYS.get(weekday_index, "Monday")
         week_ord = (now.isocalendar()[1] + 1) % 2  # 0 — знаменатель, 1 — числитель
@@ -101,6 +102,7 @@ async def send_daily_timetable(bot):
                 f"Доброе утро! ☀️\n"
                 f"Расписание на сегодня для группы <b>{group_display_name}</b>:\n\n"
                 f"{timetable_text}"
+                f"{week_number-35} неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}"
             )
 
             for i in range(0, len(message_text), 4000):
