@@ -43,8 +43,10 @@ def format_timetable(data):
                 place = l.get('place', 'Не указано')
                 teacher = l.get('teacher_name', 'Не указан')
 
+                lesson_num = cs.LESSON_NUMBERS.get(start_time, "?")
+
                 text_lines.append(
-                    f"🕒{i} пара {start_time}–{end_time}\n"
+                    f"🕒{lesson_num} пара {start_time}–{end_time}\n"
                     f"<b>{subject_name}</b> <i>({lesson_type})</i>\n"
                     f"📍Аудитория: {place}\n"
                     f"Преподаватель: {teacher}\n"
@@ -65,8 +67,10 @@ def format_timetable(data):
                     place = l.get('place', 'Не указано')
                     teacher = l.get('teacher_name', 'Не указан')
 
+                    lesson_num = cs.LESSON_NUMBERS.get(start_time, "?")
+
                     text_lines.append(
-                        f"🕒{i} пара {start_time}–{end_time}\n"
+                        f"🕒{lesson_num} пара {start_time}–{end_time}\n"
                         f"<b>{subject_name}</b> <i>({lesson_type})</i>\n"
                         f"📍Аудитория: {place}\n"
                         f"Преподаватель: {teacher}\n"
@@ -120,8 +124,10 @@ def format_teacher_timetable_simple(data):
                 subject_name = l.get('subject_name', 'Без предмета')
                 group_name = cs.groups.get(l.get('group', ''), l.get('group', 'Не указана'))
 
+                lesson_num = cs.LESSON_NUMBERS.get(start_time, "?")
+
                 text_lines.append(
-                    f"{start_time}–{end_time} | {subject_name} | {place} | {group_name}"
+                    f"{lesson_num} пара {start_time}–{end_time} | {subject_name} | {place} | {group_name}"
                 )
 
             text_lines.append("")
