@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 TEACHERS_PER_PAGE = 5
+GROUPS_PER_PAGE = 6
 
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
@@ -41,7 +42,13 @@ DATABASE_URL = os.getenv(
     f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 )
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=10,
+    max_overflow=20,
+    pool_timeout=60,
+    pool_recycle=1800,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -54,14 +61,54 @@ def get_db():
         db.close()
 
 
-def get_group_keyboard() -> InlineKeyboardBuilder:
+def get_group_keyboard(groups, page: int = 0):
     kb = InlineKeyboardBuilder()
-    with next(get_db()) as db:  
-        groups = db.query(models.Group).order_by(models.Group.name).all()
-        for group in groups:
-            kb.button(text=cs.groups.get(group.name, group.name), callback_data=f"choose_group:{group.id}")
+
+    start = page * GROUPS_PER_PAGE
+    end = start + GROUPS_PER_PAGE
+    page_groups = groups[start:end]
+
+    for g in page_groups:
+        kb.button(
+            text=cs.groups.get(g.name, g.name),
+            callback_data=f"choose_group:{g.id}"
+        )
     kb.adjust(2)
+
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(("⬅️ Назад", f"group_page:{page-1}"))
+    if end < len(groups):
+        nav_buttons.append(("Вперёд ➡️", f"group_page:{page+1}"))
+
+    if nav_buttons:
+        for text, data in nav_buttons:
+            kb.button(text=text, callback_data=data)
+        kb.adjust(len(nav_buttons))
+
+    kb.button(text="🔙 В меню", callback_data="back_to_main")
+    kb.adjust(1)
+
     return kb.as_markup()
+
+
+@router.callback_query(F.data.startswith("group_page:"))
+async def paginate_groups(callback: CallbackQuery):
+
+    page = int(callback.data.split(":")[1])
+
+
+    with next(get_db()) as db:
+        groups = db.query(models.Group).order_by(models.Group.name).all()
+
+
+    keyboard = get_group_keyboard(groups, page=page)
+
+
+    await callback.message.edit_reply_markup(reply_markup=keyboard)
+
+
+    await callback.answer()
 
 
 def get_teacher_keyboard(teachers, page: int = 0):
@@ -121,9 +168,12 @@ async def start(message: Message):
             db.commit()
             db.refresh(new_group_user)
 
+            with next(get_db()) as db:
+                groups = db.query(models.Group).order_by(models.Group.name).all()
+
             await message.answer(
                 text=cs.reg_text.format(title=username),
-                reply_markup=get_group_keyboard(),
+                reply_markup=get_group_keyboard(groups, page=0),
                 parse_mode="HTML"
             )
             return
@@ -149,9 +199,12 @@ async def start(message: Message):
             db.commit()
             db.refresh(new_user)
 
+            with next(get_db()) as db:
+                groups = db.query(models.Group).order_by(models.Group.name).all()
+
             await message.answer(
                 text=cs.reg_text.format(title=username),
-                reply_markup=get_group_keyboard()
+                reply_markup=get_group_keyboard(groups, page=0)
             )
             return
 
@@ -305,10 +358,13 @@ async def get_today_timetable(callback: CallbackQuery):
         return
 
     if not chat_record.group_rel:
+        with next(get_db()) as db:
+            groups = db.query(models.Group).order_by(models.Group.name).all()
+
         await callback.message.edit_text(
             "Ваша группа не выбрана. Сначала выберите группу.",
             parse_mode="HTML",
-            reply_markup=get_group_keyboard()
+            reply_markup=get_group_keyboard(groups, page=0)
         )
         return
 
@@ -387,10 +443,13 @@ async def get_tomorrow_timetable(callback: CallbackQuery):
         return
 
     if not chat_record.group_rel:
+        with next(get_db()) as db:
+            groups = db.query(models.Group).order_by(models.Group.name).all()
+
         await callback.message.edit_text(
             "Ваша группа не выбрана. Сначала выберите группу.",
             parse_mode="HTML",
-            reply_markup=get_group_keyboard()
+            reply_markup=get_group_keyboard(groups, page=0)
         )
         return
 
@@ -451,10 +510,13 @@ async def get_weekly_timetable(callback: CallbackQuery):
         return
 
     if not chat_record.group_rel:
+        with next(get_db()) as db:
+            groups = db.query(models.Group).order_by(models.Group.name).all()
+
         await callback.message.edit_text(
             "Ваша группа не выбрана. Сначала выберите группу.",
             parse_mode="HTML",
-            reply_markup=get_group_keyboard()
+            reply_markup=get_group_keyboard(groups, page=0)
         )
         return
 
@@ -507,10 +569,13 @@ async def current_lesson(callback: CallbackQuery):
         return
 
     if not chat_record.group_rel:
+        with next(get_db()) as db:
+            groups = db.query(models.Group).order_by(models.Group.name).all()
+
         await callback.message.edit_text(
             "Ваша группа не выбрана. Сначала выберите группу.",
             parse_mode="HTML",
-            reply_markup=get_group_keyboard()
+            reply_markup=get_group_keyboard(groups, page=0)
         )
         return
 
@@ -601,10 +666,13 @@ async def change_group(callback: CallbackQuery):
 
     current_group_name = chat_record.group_rel.name if chat_record.group_rel else "не выбрана"
 
+    with next(get_db()) as db:
+            groups = db.query(models.Group).order_by(models.Group.name).all()
+
     await callback.message.edit_text(
         f"Текущая группа: <b>{cs.groups.get(current_group_name, current_group_name)}</b>\nВыберите новую группу:",
         parse_mode="HTML",
-        reply_markup=get_group_keyboard()
+        reply_markup=get_group_keyboard(groups, page=0)
     )
 
 
@@ -680,7 +748,7 @@ async def teacher_timetable(callback: CallbackQuery):
         return
 
     await callback.message.edit_text(
-        "Выберите преподавателя:",
+        cs.teacher_text,
         parse_mode="HTML",
         reply_markup=get_teacher_keyboard(teachers, page=0)
     )
@@ -694,7 +762,7 @@ async def paginate_teachers(callback: CallbackQuery):
     teachers = db.query(models.Teacher).order_by(models.Teacher.full_name).all()
 
     await callback.message.edit_text(
-        "Выберите преподавателя:",
+        cs.teacher_text,
         parse_mode="HTML",
         reply_markup=get_teacher_keyboard(teachers, page=page)
     )
