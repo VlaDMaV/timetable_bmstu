@@ -85,7 +85,7 @@ def format_teacher_timetable_simple(data):
     """
     Форматирует расписание преподавателя с учётом ord (0 - знаменатель, 1 - числитель).
     Подгруппы игнорируем.
-    Вывод: сначала числитель, потом знаменатель, пары по дням.
+    Если у преподавателя в одно время в один день несколько групп — объединяем их в одну строку.
     """
     if not data:
         return "Расписание пустое."
@@ -116,18 +116,22 @@ def format_teacher_timetable_simple(data):
 
             text_lines.append(f"📅 {cs.WEEKDAYS_RU.get(day, day)}")
 
-            day_lessons.sort(key=lambda x: x.get('start_time', '00:00'))
+            grouped = defaultdict(list)
             for l in day_lessons:
-                start_time = l.get('start_time', '??:??')
-                end_time = l.get('end_time', '??:??')
-                place = l.get('place', 'Не указано')
-                subject_name = l.get('subject_name', 'Без предмета')
+                key = (
+                    l.get('start_time', '??:??'),
+                    l.get('end_time', '??:??'),
+                    l.get('subject_name', 'Без предмета'),
+                    l.get('place', 'Не указано'),
+                )
                 group_name = cs.groups.get(l.get('group', ''), l.get('group', 'Не указана'))
+                grouped[key].append(group_name)
 
+            for (start_time, end_time, subject_name, place), groups in sorted(grouped.items(), key=lambda x: x[0][0]):
                 lesson_num = cs.LESSON_NUMBERS.get(start_time, "?")
-
+                groups_str = ", ".join(sorted(groups))
                 text_lines.append(
-                    f"{lesson_num} пара {start_time}–{end_time} | {subject_name} | {place} | {group_name}"
+                    f"{lesson_num} пара {start_time}–{end_time} | {subject_name} | {place} | {groups_str}"
                 )
 
             text_lines.append("")
