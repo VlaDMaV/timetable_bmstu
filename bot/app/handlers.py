@@ -746,7 +746,13 @@ async def teacher_timetable(callback: CallbackQuery):
         return
 
     db = next(get_db())
-    teachers = db.query(models.Teacher).order_by(models.Teacher.full_name).all()
+    teachers = (
+        db.query(models.Teacher)
+        .filter(models.Teacher.full_name != "Не указан")
+        .order_by(models.Teacher.full_name)
+        .all()
+    )
+
     if not teachers:
         await callback.message.edit_text("❌ В базе нет преподавателей.", parse_mode="HTML")
         return
@@ -763,7 +769,12 @@ async def paginate_teachers(callback: CallbackQuery):
     page = int(callback.data.split(":")[1])
 
     db = next(get_db())
-    teachers = db.query(models.Teacher).order_by(models.Teacher.full_name).all()
+    teachers = (
+        db.query(models.Teacher)
+        .filter(models.Teacher.full_name != "Не указан")
+        .order_by(models.Teacher.full_name)
+        .all()
+    )
 
     await callback.message.edit_text(
         cs.teacher_text,
