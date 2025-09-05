@@ -553,7 +553,73 @@ async def get_weekly_timetable(callback: CallbackQuery):
         f"Группа: <b>{group_display_name}</b>\n"
         f"{week_number-35} неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}",
         parse_mode="HTML",
-        reply_markup=kb.back_to_main
+        reply_markup=kb.next_week
+    )
+
+
+@router.callback_query(F.data.startswith("next_week"))
+async def get_weekly_timetable(callback: CallbackQuery):
+    db = next(get_db())
+
+    moscow_tz = pytz.timezone("Europe/Moscow")
+    now = datetime.now(moscow_tz)
+    year, week_number, weekday = now.isocalendar()
+    week_ord = week_number % 2
+
+    chat_id = callback.message.chat.id
+    chat_type = callback.message.chat.type
+    chat_title = callback.message.chat.title
+
+    chat_record = db.query(models.User).filter(models.User.tg_id == chat_id).first()
+    if not chat_record:
+        await callback.message.edit_text(
+            f"Этот чат не найден в базе.\nЧат: {chat_title} ({chat_type})",
+            parse_mode="HTML",
+            reply_markup=kb.back_to_main
+        )
+        return
+
+    if not chat_record.group_rel:
+        with next(get_db()) as db:
+            groups = db.query(models.Group).order_by(models.Group.name).all()
+
+        await callback.message.edit_text(
+            "Ваша группа не выбрана. Сначала выберите группу.",
+            parse_mode="HTML",
+            reply_markup=get_group_keyboard(groups, page=0)
+        )
+        return
+
+    current_group_name = chat_record.group_rel.name
+    group_display_name = cs.groups.get(current_group_name, current_group_name)
+
+    base_url = "http://backend:8000/dayboard/filter"
+    params = {
+        "ord": week_ord,
+        "group": current_group_name
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(base_url, params=params)
+            response.raise_for_status()
+            data = response.json()
+        except httpx.HTTPError as e:
+            await callback.message.edit_text(
+                f"Ошибка при запросе к API:\n{e}",
+                parse_mode="HTML",
+                reply_markup=kb.back_to_main
+            )
+            return
+
+    timetable_text = format_timetable(data)
+
+    await callback.message.edit_text(
+        f"Расписание на неделю:\n\n{timetable_text}"
+        f"Группа: <b>{group_display_name}</b>\n"
+        f"{week_number+1-35} неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}",
+        parse_mode="HTML",
+        reply_markup=kb.prev_week
     )
 
 
