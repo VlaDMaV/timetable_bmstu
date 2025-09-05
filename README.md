@@ -8,10 +8,7 @@
     git clone https://github.com/VlaDMaV/timetable_bmstu.git
     ```
 
-* Перейти в директорию проекта
-    ```bash
-    cd ./timetable_bmstu
-    ```
+## Деплой проекта
 
 * Создать .env файл (можно полностью скопировать .env.example и заменить внутри данныке на свои)
 
@@ -19,3 +16,8 @@
     ```bash
     docker-compose up --build -d
     ```
+    
+P.S. для просмотра логов контейнеров можно использовать:
+```bash
+    docker logs <container_id>
+```
