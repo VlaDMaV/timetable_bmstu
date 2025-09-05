@@ -37,3 +37,15 @@ podpis_button_on = InlineKeyboardMarkup(inline_keyboard=[
     ],
     [InlineKeyboardButton(text="🔙 Назад в меню", callback_data="back_to_main")],
 ])
+
+
+next_week = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="📚 На следующую неделю", callback_data="next_week")],
+    [InlineKeyboardButton(text="🔙 Назад в меню", callback_data="back_to_main")],
+])
+
+
+prev_week = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="📚 На эту неделю", callback_data="weekly_timetable")],
+    [InlineKeyboardButton(text="🔙 Назад в меню", callback_data="back_to_main")],
+])
