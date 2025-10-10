@@ -3,7 +3,9 @@ from typing import List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload, aliased
-from pydantic import BaseModel
+from sqlalchemy import or_
+from sqlalchemy import asc
+from pydantic import BaseModel, ConfigDict
 
 from common.database import models
 from database.database import engine, SessionLocal
@@ -46,6 +48,21 @@ class DayboardWithAll(BaseModel):
         orm_mode = True
 
 
+class GroupOut(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        orm_mode = True
+
+
+class TeacherOut(BaseModel):
+    id: int
+    full_name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -57,6 +74,38 @@ def get_db():
 @app.get("/subjects")
 def get_subjects(db: Session = Depends(get_db)):
     return db.query(models.Subject).all()
+
+
+@app.get("/groups", response_model=List[GroupOut])
+def get_groups(
+    kind: Optional[str] = Query(
+        default=None,
+        description="Фильтр по типу группы: 'uik' или 'mk'",
+        regex="^(uik|mk)$"
+    ),
+    db: Session = Depends(get_db),
+):
+    query = db.query(models.Group)
+
+    if kind:
+        k = kind.lower()
+        if k == "uik":
+            query = query.filter(
+                or_(
+                    models.Group.name.ilike("УИК%"),
+                    models.Group.name.ilike("UIK%")
+                )
+            )
+        elif k == "mk":
+            query = query.filter(
+                or_(
+                    models.Group.name.ilike("МК%"),
+                    models.Group.name.ilike("MK%")
+                )
+            )
+
+    groups = query.order_by(models.Group.name.asc()).all()
+    return [GroupOut(id=g.id, name=g.name) for g in groups]
 
 
 @app.post("/dayboard")
@@ -159,3 +208,29 @@ def get_teacher_dayboard(full_name: str, db: Session = Depends(get_db)):
         })
 
     return lessons
+
+
+@app.get("/teachers", response_model=List[TeacherOut])
+def list_teachers(
+    q: Optional[str] = Query(None, min_length=1, description="Поиск по подстроке ФИО"),
+    include_unknown: bool = Query(False, description="Включать 'Не указан'"),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    query = db.query(models.Teacher)
+
+    if not include_unknown:
+        query = query.filter(models.Teacher.full_name != "Не указан")
+
+    if q:
+        query = query.filter(models.Teacher.full_name.ilike(f"%{q}%"))
+
+    teachers = (
+        query.order_by(asc(models.Teacher.full_name))
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return [TeacherOut.model_validate(t, from_attributes=True) for t in teachers]
