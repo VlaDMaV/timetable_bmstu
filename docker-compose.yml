@@ -70,6 +70,5 @@ services:
       - ./admin:/app
       - ./common:/app/common
 
-
 volumes:
   db_data:
