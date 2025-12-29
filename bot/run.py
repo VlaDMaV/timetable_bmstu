@@ -228,7 +228,7 @@ async def main():
         ).start()
         
         # Запускаем таски
-        asyncio.create_task(daily_timetable_task(manager.bot))
+        #asyncio.create_task(daily_timetable_task(manager.bot))
         asyncio.create_task(restart_checker(manager))
         
         try:
