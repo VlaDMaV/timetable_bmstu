@@ -70,39 +70,5 @@ services:
       - ./admin:/app
       - ./common:/app/common
 
-  frontend:
-    image: timetable_frontend
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    environment:
-      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE}
-      NODE_ENV: production
-    depends_on:
-      backend:
-        condition: service_started
-    ports:
-      - "3000:3000"
-
-  frontend-dev:
-    image: timetable_frontend_dev
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    environment:
-      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE}
-      NODE_ENV: development
-    depends_on:
-      backend:
-        condition: service_started
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    command: npm run dev
-    profiles: ["dev"]
-
-
 volumes:
   db_data:
