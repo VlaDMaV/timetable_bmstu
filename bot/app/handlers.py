@@ -22,6 +22,11 @@ import app.text as cs
 from app.utils.utils import format_timetable, format_teacher_timetable_simple
 
 
+
+# Поменял для чётного семестра -6 и !=, в случае нечётного -35 и == у timetable, weekly_timetable, tomorrow_timetable, next_week и всех остальных
+
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -29,6 +34,11 @@ router = Router()
 
 TEACHERS_PER_PAGE = 5
 GROUPS_PER_PAGE = 6
+DEGREE_MAX_COURSES = {
+    "b": 4,  # бакалавриат
+    "m": 2,  # магистратура
+    "a": 4,  # аспирантура
+}
 
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
@@ -65,7 +75,76 @@ def get_db():
         db.close()
 
 
-def get_group_keyboard(groups, page: int = 0):
+def get_faculty_keyboard():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="💻 ИУК", callback_data="choose_faculty:uik")
+    kb.button(text="🛠️ МК", callback_data="choose_faculty:mk")
+    kb.adjust(2)
+    kb.button(text="🔙 В меню", callback_data="back_to_main")
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+def get_degree_keyboard(faculty_code: str):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="👨‍🎓 Бакалавриат", callback_data=f"choose_degree:{faculty_code}:b")
+    kb.button(text="👩‍🎓 Магистратура", callback_data=f"choose_degree:{faculty_code}:m")
+    kb.button(text="👨‍🏫 Аспирантура", callback_data=f"choose_degree:{faculty_code}:a")
+    kb.adjust(1)
+    kb.button(text="⬅️ Назад", callback_data="back_to_faculty")
+    kb.button(text="🔙 В меню", callback_data="back_to_main")
+    kb.adjust(2)
+    return kb.as_markup()
+
+
+def calc_course_from_group(name: str) -> int | None:
+    try:
+        name = name.lower()
+
+        # берём часть между '-' и последней буквой
+        after_dash = name.split("-")[1]
+
+        # первая цифра после '-'
+        first_digit = int(after_dash[0])
+
+        # если чётная — делим на 2
+        if first_digit % 2 == 0:
+            return first_digit // 2
+        else:
+            # если нечётная — (n - 1) / 2 + 1
+            return (first_digit - 1) // 2 + 1
+
+    except Exception:
+        return None
+
+def filter_groups(groups, faculty: str, degree: str, course: int | None = None):
+    faculty = faculty.lower()
+    degree = degree.lower()
+
+    res = []
+    for g in groups:
+        name = (g.name or "").lower().strip()
+
+        # 1. факультет (uik / mk)
+        if not name.startswith(faculty):
+            continue
+
+        # 2. уровень (b / m / a)
+        if not name.endswith(degree):
+            continue
+
+        # 3. курс (если задан)
+        if course is not None:
+            group_course = calc_course_from_group(name)
+            if group_course != course:
+                continue
+
+        res.append(g)
+
+    return res
+
+
+def get_group_keyboard(groups, faculty: str, degree_letter: str, page: int = 0):
     kb = InlineKeyboardBuilder()
 
     start = page * GROUPS_PER_PAGE
@@ -81,37 +160,120 @@ def get_group_keyboard(groups, page: int = 0):
 
     nav_buttons = []
     if page > 0:
-        nav_buttons.append(("⬅️ Назад", f"group_page:{page-1}"))
+        nav_buttons.append(("⬅️ Назад", f"group_page:{faculty}:{degree_letter}:{page-1}"))
     if end < len(groups):
-        nav_buttons.append(("Вперёд ➡️", f"group_page:{page+1}"))
+        nav_buttons.append(("Вперёд ➡️", f"group_page:{faculty}:{degree_letter}:{page+1}"))
 
     if nav_buttons:
         for text, data in nav_buttons:
             kb.button(text=text, callback_data=data)
         kb.adjust(len(nav_buttons))
 
+    kb.button(text="⬅️ Назад", callback_data=f"back_to_degree:{faculty}")
     kb.button(text="🔙 В меню", callback_data="back_to_main")
-    kb.adjust(1)
+    kb.adjust(2)
 
     return kb.as_markup()
 
 
-@router.callback_query(F.data.startswith("group_page:"))
-async def paginate_groups(callback: CallbackQuery):
+def get_course_keyboard(faculty: str, degree: str):
+    kb = InlineKeyboardBuilder()
 
-    page = int(callback.data.split(":")[1])
+    max_course = DEGREE_MAX_COURSES[degree]
 
+    for course in range(1, max_course + 1):
+        kb.button(
+            text=f"{course} курс",
+            callback_data=f"choose_course:{faculty}:{degree}:{course}"
+        )
+
+    kb.adjust(2)
+
+    kb.button(text="⬅️ Назад", callback_data=f"back_to_degree:{faculty}")
+    kb.button(text="🔙 В меню", callback_data="back_to_main")
+    kb.adjust(2)
+
+    return kb.as_markup()
+
+
+@router.callback_query(F.data == "back_to_faculty")
+async def back_to_faculty(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "Выберите факультет:",
+        reply_markup=get_faculty_keyboard()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("choose_faculty:"))
+async def choose_faculty(callback: CallbackQuery):
+    faculty = callback.data.split(":")[1]
+    await callback.message.edit_text(
+        "Выберите уровень обучения:",
+        reply_markup=get_degree_keyboard(faculty)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("back_to_degree:"))
+async def back_to_degree(callback: CallbackQuery):
+    faculty = callback.data.split(":")[1]
+    await callback.message.edit_text(
+        "Выберите уровень обучения:",
+        reply_markup=get_degree_keyboard(faculty)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("choose_degree:"))
+async def choose_degree(callback: CallbackQuery):
+    _, faculty, degree = callback.data.split(":")
+
+    await callback.message.edit_text(
+        "Выберите курс:",
+        reply_markup=get_course_keyboard(faculty, degree)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("choose_course:"))
+async def choose_course(callback: CallbackQuery):
+    _, faculty, degree, course_str = callback.data.split(":")
+    course = int(course_str)
 
     with next(get_db()) as db:
-        groups = db.query(models.Group).order_by(models.Group.name).all()
+        groups_all = db.query(models.Group).order_by(models.Group.name).all()
+
+    groups = filter_groups(groups_all, faculty, degree, course)
+
+    if not groups:
+        await callback.message.edit_text(
+            "❌ Групп для этого курса не найдено.",
+            reply_markup=get_course_keyboard(faculty, degree)
+        )
+        await callback.answer()
+        return
+
+    await callback.message.edit_text(
+        f"Выберите группу ({course} курс):",
+        reply_markup=get_group_keyboard(groups, faculty, degree, page=0)
+    )
+    await callback.answer()
 
 
-    keyboard = get_group_keyboard(groups, page=page)
+@router.callback_query(F.data.startswith("group_page:"))
+async def paginate_groups(callback: CallbackQuery):
+    _, faculty, degree_letter, page_str = callback.data.split(":")
+    page = int(page_str)
 
+    with next(get_db()) as db:
+        groups_all = db.query(models.Group).order_by(models.Group.name).all()
 
-    await callback.message.edit_reply_markup(reply_markup=keyboard)
+    groups = filter_groups(groups_all, faculty, degree_letter)
 
-
+    await callback.message.edit_reply_markup(
+        reply_markup=get_group_keyboard(groups, faculty, degree_letter, page=page)
+    )
     await callback.answer()
 
 
@@ -177,7 +339,7 @@ async def start(message: Message):
 
             await message.answer(
                 text=cs.reg_text.format(title=username),
-                reply_markup=get_group_keyboard(groups, page=0),
+                reply_markup=get_faculty_keyboard(),
                 parse_mode="HTML"
             )
             return
@@ -208,7 +370,7 @@ async def start(message: Message):
 
             await message.answer(
                 text=cs.reg_text.format(title=username),
-                reply_markup=get_group_keyboard(groups, page=0)
+                reply_markup=get_faculty_keyboard(),
             )
             return
 
@@ -368,7 +530,7 @@ async def get_today_timetable(callback: CallbackQuery):
         await callback.message.edit_text(
             "Ваша группа не выбрана. Сначала выберите группу.",
             parse_mode="HTML",
-            reply_markup=get_group_keyboard(groups, page=0)
+            reply_markup=get_faculty_keyboard(),
         )
         return
 
@@ -400,7 +562,7 @@ async def get_today_timetable(callback: CallbackQuery):
     await callback.message.edit_text(
         f"Расписание на сегодня:\n\n{timetable_text}"
         f"Группа: <b>{group_display_name}</b>\n"
-        f"{week_number-35} неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}",
+        f"{week_number-6} неделя: {'Знаменатель' if week_ord != 0 else 'Числитель'}", 
         parse_mode="HTML",
         reply_markup=kb.back_to_main
     )
@@ -453,7 +615,7 @@ async def get_tomorrow_timetable(callback: CallbackQuery):
         await callback.message.edit_text(
             "Ваша группа не выбрана. Сначала выберите группу.",
             parse_mode="HTML",
-            reply_markup=get_group_keyboard(groups, page=0)
+            reply_markup=get_faculty_keyboard(),
         )
         return
 
@@ -485,7 +647,7 @@ async def get_tomorrow_timetable(callback: CallbackQuery):
     await callback.message.edit_text(
         f"Расписание на завтра:\n\n{timetable_text}"
         f"Группа: <b>{group_display_name}</b>\n"
-        f"{week_number-35} неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}",
+        f"{week_number-6} неделя: {'Знаменатель' if week_ord != 0 else 'Числитель'}",
         parse_mode="HTML",
         reply_markup=kb.back_to_main
     )
@@ -520,7 +682,7 @@ async def get_weekly_timetable(callback: CallbackQuery):
         await callback.message.edit_text(
             "Ваша группа не выбрана. Сначала выберите группу.",
             parse_mode="HTML",
-            reply_markup=get_group_keyboard(groups, page=0)
+            reply_markup=get_faculty_keyboard(),
         )
         return
 
@@ -551,7 +713,7 @@ async def get_weekly_timetable(callback: CallbackQuery):
     await callback.message.edit_text(
         f"Расписание на неделю:\n\n{timetable_text}"
         f"Группа: <b>{group_display_name}</b>\n"
-        f"{week_number-35} неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}",
+        f"{week_number-6} неделя: {'Знаменатель' if week_ord != 0 else 'Числитель'}",
         parse_mode="HTML",
         reply_markup=kb.next_week
     )
@@ -586,7 +748,7 @@ async def get_weekly_timetable(callback: CallbackQuery):
         await callback.message.edit_text(
             "Ваша группа не выбрана. Сначала выберите группу.",
             parse_mode="HTML",
-            reply_markup=get_group_keyboard(groups, page=0)
+            reply_markup=get_faculty_keyboard(),
         )
         return
 
@@ -617,7 +779,7 @@ async def get_weekly_timetable(callback: CallbackQuery):
     await callback.message.edit_text(
         f"Расписание на неделю:\n\n{timetable_text}"
         f"Группа: <b>{group_display_name}</b>\n"
-        f"{week_number+1-35} неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}",
+        f"{week_number+1-6} неделя: {'Знаменатель' if week_ord != 0 else 'Числитель'}",
         parse_mode="HTML",
         reply_markup=kb.prev_week
     )
@@ -645,7 +807,7 @@ async def current_lesson(callback: CallbackQuery):
         await callback.message.edit_text(
             "Ваша группа не выбрана. Сначала выберите группу.",
             parse_mode="HTML",
-            reply_markup=get_group_keyboard(groups, page=0)
+            reply_markup=get_faculty_keyboard(),
         )
         return
 
@@ -742,7 +904,7 @@ async def change_group(callback: CallbackQuery):
     await callback.message.edit_text(
         f"Текущая группа: <b>{cs.groups.get(current_group_name, current_group_name)}</b>\nВыберите новую группу:",
         parse_mode="HTML",
-        reply_markup=get_group_keyboard(groups, page=0)
+        reply_markup=get_faculty_keyboard(),
     )
 
 
@@ -820,7 +982,7 @@ async def teacher_timetable(callback: CallbackQuery):
     )
 
     if not teachers:
-        await callback.message.edit_text("❌ В базе нет преподавателей.", parse_mode="HTML")
+        await callback.message.edit_text("❌ В базе нет преподавателей.", parse_mode="HTML", reply_markup=kb.back_to_main)
         return
 
     await callback.message.edit_text(

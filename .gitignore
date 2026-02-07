@@ -2,3 +2,4 @@ __pycache__/
 .env
 bot/core.1
 backup.sql
+*.json
