@@ -3,7 +3,7 @@ import app.text as cs
 
 def format_timetable(data):
     if not data:
-        return "Расписание пустое."
+        return "Расписание пустое. "
 
     day_lessons = defaultdict(list)
     day_lessons_by_subgroup = defaultdict(lambda: {"1": [], "2": []})
