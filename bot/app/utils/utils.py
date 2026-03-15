@@ -90,7 +90,7 @@ def format_teacher_timetable_simple(data):
     if not data:
         return "Расписание пустое."
 
-    lessons_by_ord = {1: [], 0: []}  # 1 - числитель, 0 - знаменатель
+    lessons_by_ord = {1: [], 0: []}  # 1 - числитель, 0 - знаменатель - при чётном семестре
     for lesson in data:
         ord_val = lesson.get('ord', 0)
         if ord_val in (0, 1):
@@ -98,7 +98,7 @@ def format_teacher_timetable_simple(data):
 
     text_lines = []
 
-    for ord_val, ord_name in [(1, "Числитель"), (0, "Знаменатель")]:
+    for ord_val, ord_name in [(0, "Числитель"), (1, "Знаменатель")]:
         lessons = lessons_by_ord[ord_val]
         if not lessons:
             continue

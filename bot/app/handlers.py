@@ -38,6 +38,7 @@ DEGREE_MAX_COURSES = {
     "b": 4,  # бакалавриат
     "m": 2,  # магистратура
     "a": 4,  # аспирантура
+    "s": 6   # специалитет
 }
 
 DB_USER = os.getenv("DB_USER", "postgres")
@@ -75,6 +76,78 @@ def get_db():
         db.close()
 
 
+def department_display_ru(dep: str) -> str:
+    """
+    uik1 -> ИК1
+    mk2  -> МК2
+    """
+    s = (dep or "").lower().strip()
+    if s.startswith("uik"):
+        return "ИУК" + s[3:]
+    if s.startswith("mk"):
+        return "МК" + s[2:]
+    return dep.upper()
+
+
+def get_department_from_group(name: str) -> str | None:
+    try:
+        s = (name or "").lower().strip()
+        left = s.split("-")[0]   # "uik2" / "mk3" / "uik6"
+        return left if left else None
+    except Exception:
+        return None
+    
+
+@router.callback_query(F.data.startswith("choose_department:"))
+async def choose_department(callback: CallbackQuery):
+    _, faculty, degree, course_str, department = callback.data.split(":")
+    course = int(course_str)
+    department = department.lower()
+
+    with next(get_db()) as db:
+        groups_all = db.query(models.Group).order_by(models.Group.name).all()
+
+    # сначала фильтр по faculty/degree/course
+    groups = filter_groups(groups_all, faculty, degree, course)
+
+    # потом добиваем кафедрой (часть до "-")
+    groups = [g for g in groups if (get_department_from_group(g.name) == department)]
+
+    if not groups:
+        await callback.message.edit_text(
+            "❌ Групп для этой кафедры не найдено.",
+            reply_markup=get_department_keyboard(faculty, degree, course, [department])
+        )
+        await callback.answer()
+        return
+
+    await callback.message.edit_text(
+        f"Выберите группу ({department_display_ru(department)}, {course} курс):",
+        reply_markup=get_group_keyboard(groups, faculty, degree, course, department, page=0)
+    )
+    await callback.answer()
+
+
+def get_department_keyboard(faculty: str, degree: str, course: int, departments: list[str]):
+    kb = InlineKeyboardBuilder()
+
+    departments = sorted(set(departments))
+
+    for dep in departments:
+        kb.button(
+            text=department_display_ru(dep),
+            callback_data=f"choose_department:{faculty}:{degree}:{course}:{dep}"
+        )
+
+    kb.adjust(2)
+
+    kb.button(text="⬅️ Назад", callback_data=f"back_to_course:{faculty}:{degree}")
+    kb.button(text="🔙 В меню", callback_data="back_to_main")
+    kb.adjust(2)
+
+    return kb.as_markup()
+
+
 def get_faculty_keyboard():
     kb = InlineKeyboardBuilder()
     kb.button(text="💻 ИУК", callback_data="choose_faculty:uik")
@@ -90,6 +163,7 @@ def get_degree_keyboard(faculty_code: str):
     kb.button(text="👨‍🎓 Бакалавриат", callback_data=f"choose_degree:{faculty_code}:b")
     kb.button(text="👩‍🎓 Магистратура", callback_data=f"choose_degree:{faculty_code}:m")
     kb.button(text="👨‍🏫 Аспирантура", callback_data=f"choose_degree:{faculty_code}:a")
+    kb.button(text="🎓 Специалитет", callback_data=f"choose_degree:{faculty_code}:s")
     kb.adjust(1)
     kb.button(text="⬅️ Назад", callback_data="back_to_faculty")
     kb.button(text="🔙 В меню", callback_data="back_to_main")
@@ -97,25 +171,60 @@ def get_degree_keyboard(faculty_code: str):
     return kb.as_markup()
 
 
-def calc_course_from_group(name: str) -> int | None:
+def calc_course_basic_first_digit(name: str) -> int | None:
+    """
+    Общая логика (как у бакалавриата):
+    берём первую цифру после '-'
+    """
     try:
-        name = name.lower()
+        name = name.lower().strip()
+        after_dash = name.split("-")[1]   # например "62b" или "21" или "101"
+        first_digit = int(after_dash[0])  # 6 / 2 / 1
 
-        # берём часть между '-' и последней буквой
-        after_dash = name.split("-")[1]
-
-        # первая цифра после '-'
-        first_digit = int(after_dash[0])
-
-        # если чётная — делим на 2
         if first_digit % 2 == 0:
             return first_digit // 2
         else:
-            # если нечётная — (n - 1) / 2 + 1
             return (first_digit - 1) // 2 + 1
+    except Exception:
+        return None
+
+
+def calc_course_specialist(name: str) -> int | None:
+    """
+    Специалитет:
+    - если после '-' число 101 -> 5 курс
+    - если 121..129 -> 6 курс
+    - иначе (первые 4 курса) считаем как у бакалавриата (по первой цифре после '-')
+    """
+    try:
+        s = name.lower().strip()
+        after_dash = s.split("-")[1]  # "21" / "101" / "121" / "62b"(но у спец без буквы)
+        # на всякий случай уберём буквы, если вдруг попадутся
+        num_str = "".join(ch for ch in after_dash if ch.isdigit())
+        if not num_str:
+            return None
+
+        n = int(num_str)
+
+        if n == 101:
+            return 5
+        if 121 <= n <= 129:
+            return 6
+
+        # первые 1-4 курса — как у бакалавриата
+        return calc_course_basic_first_digit(s)
 
     except Exception:
         return None
+
+
+def calc_course_from_group(name: str, degree: str) -> int | None:
+    degree = degree.lower()
+    if degree == "s":
+        return calc_course_specialist(name)
+    # b/m/a
+    return calc_course_basic_first_digit(name)
+
 
 def filter_groups(groups, faculty: str, degree: str, course: int | None = None):
     faculty = faculty.lower()
@@ -125,17 +234,24 @@ def filter_groups(groups, faculty: str, degree: str, course: int | None = None):
     for g in groups:
         name = (g.name or "").lower().strip()
 
-        # 1. факультет (uik / mk)
+        # 1) факультет
         if not name.startswith(faculty):
             continue
 
-        # 2. уровень (b / m / a)
-        if not name.endswith(degree):
+        # 2) уровень
+        if degree in ("b", "m", "a"):
+            if not name.endswith(degree):
+                continue
+        elif degree == "s":
+            # специалитет: БЕЗ суффикса b/m/a
+            if name.endswith(("b", "m", "a")):
+                continue
+        else:
             continue
 
-        # 3. курс (если задан)
+        # 3) курс
         if course is not None:
-            group_course = calc_course_from_group(name)
+            group_course = calc_course_from_group(name, degree)
             if group_course != course:
                 continue
 
@@ -144,7 +260,40 @@ def filter_groups(groups, faculty: str, degree: str, course: int | None = None):
     return res
 
 
-def get_group_keyboard(groups, faculty: str, degree_letter: str, page: int = 0):
+@router.callback_query(F.data.startswith("back_to_course:"))
+async def back_to_course(callback: CallbackQuery):
+    _, faculty, degree = callback.data.split(":")
+    await callback.message.edit_text(
+        "Выберите курс:",
+        reply_markup=get_course_keyboard(faculty, degree)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("back_to_departments:"))
+async def back_to_departments(callback: CallbackQuery):
+    _, faculty, degree, course_str = callback.data.split(":")
+    course = int(course_str)
+
+    with next(get_db()) as db:
+        groups_all = db.query(models.Group).order_by(models.Group.name).all()
+
+    groups = filter_groups(groups_all, faculty, degree, course)
+
+    deps = []
+    for g in groups:
+        dep = get_department_from_group(g.name)
+        if dep:
+            deps.append(dep)
+
+    await callback.message.edit_text(
+        "Выберите кафедру:",
+        reply_markup=get_department_keyboard(faculty, degree, course, deps)
+    )
+    await callback.answer()
+
+
+def get_group_keyboard(groups, faculty: str, degree: str, course: int, department: str, page: int = 0):
     kb = InlineKeyboardBuilder()
 
     start = page * GROUPS_PER_PAGE
@@ -160,16 +309,16 @@ def get_group_keyboard(groups, faculty: str, degree_letter: str, page: int = 0):
 
     nav_buttons = []
     if page > 0:
-        nav_buttons.append(("⬅️ Назад", f"group_page:{faculty}:{degree_letter}:{page-1}"))
+        nav_buttons.append(("⬅️ Назад", f"group_page:{faculty}:{degree}:{course}:{department}:{page-1}"))
     if end < len(groups):
-        nav_buttons.append(("Вперёд ➡️", f"group_page:{faculty}:{degree_letter}:{page+1}"))
+        nav_buttons.append(("Вперёд ➡️", f"group_page:{faculty}:{degree}:{course}:{department}:{page+1}"))
 
     if nav_buttons:
         for text, data in nav_buttons:
             kb.button(text=text, callback_data=data)
         kb.adjust(len(nav_buttons))
 
-    kb.button(text="⬅️ Назад", callback_data=f"back_to_degree:{faculty}")
+    kb.button(text="⬅️ Назад", callback_data=f"back_to_departments:{faculty}:{degree}:{course}")
     kb.button(text="🔙 В меню", callback_data="back_to_main")
     kb.adjust(2)
 
@@ -244,6 +393,7 @@ async def choose_course(callback: CallbackQuery):
     with next(get_db()) as db:
         groups_all = db.query(models.Group).order_by(models.Group.name).all()
 
+    # фильтруем по факультету+уровню+курсу (кафедру пока не учитываем)
     groups = filter_groups(groups_all, faculty, degree, course)
 
     if not groups:
@@ -254,25 +404,43 @@ async def choose_course(callback: CallbackQuery):
         await callback.answer()
         return
 
+    # собираем доступные кафедры из найденных групп
+    deps = []
+    for g in groups:
+        dep = get_department_from_group(g.name)
+        if dep:
+            deps.append(dep)
+
+    if not deps:
+        await callback.message.edit_text(
+            "❌ Кафедры не найдены (не могу разобрать названия групп).",
+            reply_markup=get_course_keyboard(faculty, degree)
+        )
+        await callback.answer()
+        return
+
     await callback.message.edit_text(
-        f"Выберите группу ({course} курс):",
-        reply_markup=get_group_keyboard(groups, faculty, degree, page=0)
+        "Выберите кафедру:",
+        reply_markup=get_department_keyboard(faculty, degree, course, deps)
     )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("group_page:"))
 async def paginate_groups(callback: CallbackQuery):
-    _, faculty, degree_letter, page_str = callback.data.split(":")
+    _, faculty, degree, course_str, department, page_str = callback.data.split(":")
+    course = int(course_str)
     page = int(page_str)
+    department = department.lower()
 
     with next(get_db()) as db:
         groups_all = db.query(models.Group).order_by(models.Group.name).all()
 
-    groups = filter_groups(groups_all, faculty, degree_letter)
+    groups = filter_groups(groups_all, faculty, degree, course)
+    groups = [g for g in groups if (get_department_from_group(g.name) == department)]
 
     await callback.message.edit_reply_markup(
-        reply_markup=get_group_keyboard(groups, faculty, degree_letter, page=page)
+        reply_markup=get_group_keyboard(groups, faculty, degree, course, department, page=page)
     )
     await callback.answer()
 
@@ -902,7 +1070,7 @@ async def change_group(callback: CallbackQuery):
             groups = db.query(models.Group).order_by(models.Group.name).all()
 
     await callback.message.edit_text(
-        f"Текущая группа: <b>{cs.groups.get(current_group_name, current_group_name)}</b>\nВыберите новую группу:",
+        f"Текущая группа: <b>{cs.groups.get(current_group_name, current_group_name)}</b>\nВыберите факультет:",
         parse_mode="HTML",
         reply_markup=get_faculty_keyboard(),
     )
