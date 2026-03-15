@@ -102,7 +102,7 @@ async def send_daily_timetable(bot):
                 f"Доброе утро! ☀️\n"
                 f"Расписание на сегодня для группы <b>{group_display_name}</b>:\n\n"
                 f"{timetable_text}"
-                f"{week_number-35} неделя: {'Знаменатель' if week_ord == 0 else 'Числитель'}"
+                f"{week_number-6} неделя: {'Знаменатель' if week_ord != 0 else 'Числитель'}"
             )
 
             for i in range(0, len(message_text), 4000):
@@ -228,7 +228,7 @@ async def main():
         ).start()
         
         # Запускаем таски
-        #asyncio.create_task(daily_timetable_task(manager.bot))
+        asyncio.create_task(daily_timetable_task(manager.bot))
         asyncio.create_task(restart_checker(manager))
         
         try:
