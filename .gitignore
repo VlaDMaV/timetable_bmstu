@@ -3,3 +3,5 @@ __pycache__/
 bot/core.1
 backup.sql
 *.json
+parsing/venv/
+parsing/ven*/
