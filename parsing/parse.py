@@ -1,5 +1,6 @@
 import os
 import json
+import sys
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -266,10 +267,30 @@ def save_schedule_to_db(
     }
 
 
+def read_json_from_stdin() -> dict:
+    """
+    Читает JSON, который пользователь вставляет при запуске.
+    Завершение ввода:
+      - Linux/macOS: Ctrl+D
+      - Windows: Ctrl+Z затем Enter
+    """
+    print("Вставьте JSON и завершите ввод (Ctrl+D на Linux/macOS, Ctrl+Z+Enter на Windows):")
+    raw = sys.stdin.read().strip()
+
+    if not raw:
+        print("Пустой ввод. JSON не получен.")
+        sys.exit(1)
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        print("Ошибка парсинга JSON:", e)
+        sys.exit(1)
+
+
 # -------------------- usage --------------------
 if __name__ == "__main__":
-    from file import your_json_string
-    raw_data = json.loads(your_json_string)
+    raw_data = read_json_from_stdin() 
     parsed = parse_schedule(raw_data)
 
     print('Введите номер группы: ')

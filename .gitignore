@@ -1,7 +1,12 @@
 __pycache__/
 .env
+.sql
 bot/core.1
 backup.sql
 *.json
 parsing/venv/
 parsing/ven*/
+
+# ОС
+.DS_Store
+Thumbs.db
