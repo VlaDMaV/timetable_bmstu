@@ -1,8 +1,14 @@
 from collections import defaultdict
 import app.text as cs
 
-def format_timetable(data):
-    if not data:
+def format_timetable(
+    data,
+    include_empty_days=False,
+    day_dates=None,
+    days=None,
+    day_off_dates=None,
+):
+    if not data and not include_empty_days:
         return "Расписание пустое. "
 
     day_lessons = defaultdict(list)
@@ -24,14 +30,30 @@ def format_timetable(data):
 
     text_lines = []
 
-    for day in cs.DAY_ORDER:
+    days_to_show = days if days is not None else cs.DAY_ORDER
+
+    for day in days_to_show:
         lessons_all = day_lessons.get(day, [])
         lessons_subgroup = day_lessons_by_subgroup.get(day, {"1": [], "2": []})
+        day_title = cs.WEEKDAYS_RU.get(day, day)
+        if day_dates and day in day_dates:
+            day_title = f"{day_title}, {day_dates[day].strftime('%d.%m')}"
 
-        if not lessons_all and not (lessons_subgroup["1"] or lessons_subgroup["2"]):
+        calendar_date = day_dates.get(day) if day_dates else None
+        if calendar_date and day_off_dates and calendar_date in day_off_dates:
+            text_lines.append(f"📅 {day_title}\n")
+            text_lines.append("🎉 <b>Выходной</b>\n")
+            text_lines.append("")
             continue
 
-        text_lines.append(f"📅 {cs.WEEKDAYS_RU.get(day, day)}\n")
+        if not lessons_all and not (lessons_subgroup["1"] or lessons_subgroup["2"]):
+            if include_empty_days:
+                text_lines.append(f"📅 {day_title}\n")
+                text_lines.append("💤 Пар нет\n")
+                text_lines.append("")
+            continue
+
+        text_lines.append(f"📅 {day_title}\n")
 
         if lessons_all and not any(len(v) > 0 for v in lessons_subgroup.values() if v != lessons_all):
             lessons_all.sort(key=lambda x: x.get('start_time', '00:00'))
@@ -98,7 +120,7 @@ def format_teacher_timetable_simple(data):
 
     text_lines = []
 
-    for ord_val, ord_name in [(0, "Числитель"), (1, "Знаменатель")]:
+    for ord_val, ord_name in [(0, "Знаменатель"), (1, "Числитель")]:
         lessons = lessons_by_ord[ord_val]
         if not lessons:
             continue
@@ -124,7 +146,7 @@ def format_teacher_timetable_simple(data):
                     l.get('subject_name', 'Без предмета'),
                     l.get('place', 'Не указано'),
                 )
-                group_name = cs.groups.get(l.get('group', ''), l.get('group', 'Не указана'))
+                group_name = cs.group_display_name(l.get('group', 'Не указана'))
                 grouped[key].append(group_name)
 
             for (start_time, end_time, subject_name, place), groups in sorted(grouped.items(), key=lambda x: x[0][0]):

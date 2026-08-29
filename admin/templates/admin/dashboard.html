@@ -1,0 +1,49 @@
+{% extends 'admin/custom_master.html' %}
+
+{% block body %}
+<section class="admin-hero">
+  <div>
+    <p class="eyebrow">Панель управления</p>
+    <h1>Добро пожаловать</h1>
+    <p>Быстро находите записи и переходите к нужному разделу.</p>
+  </div>
+  <form class="hero-search" method="get" action="{{ url_for('admin.search') }}">
+    <label for="dashboard-search">Поиск по всей базе</label>
+    <div class="input-group input-group-lg">
+      <input id="dashboard-search" class="form-control" type="search" name="q"
+             minlength="2" maxlength="100" placeholder="Группа, преподаватель, предмет или аудитория">
+      <span class="input-group-btn"><button class="btn btn-primary" type="submit">Найти</button></span>
+    </div>
+  </form>
+</section>
+
+<div class="stats-grid">
+  {% for label, value in counts.items() %}
+    <article class="stat-card"><strong>{{ value }}</strong><span>{{ label }}</span></article>
+  {% endfor %}
+</div>
+
+<h2 class="section-title">Быстрые действия</h2>
+<div class="shortcut-grid">
+  <a class="shortcut-card shortcut-primary" href="{{ url_for('dayboard.index_view') }}">
+    <span class="glyphicon glyphicon-calendar" aria-hidden="true"></span>
+    <strong>Расписание</strong><small>Просмотр, фильтры и редактирование занятий</small>
+  </a>
+  <a class="shortcut-card" href="{{ url_for('group.index_view') }}">
+    <span class="glyphicon glyphicon-education" aria-hidden="true"></span>
+    <strong>Группы</strong><small>Поиск и управление учебными группами</small>
+  </a>
+  <a class="shortcut-card" href="{{ url_for('teacher.index_view') }}">
+    <span class="glyphicon glyphicon-user" aria-hidden="true"></span>
+    <strong>Преподаватели</strong><small>Справочник преподавателей</small>
+  </a>
+  <a class="shortcut-card" href="{{ url_for('user.index_view') }}">
+    <span class="glyphicon glyphicon-phone" aria-hidden="true"></span>
+    <strong>Пользователи</strong><small>Telegram-пользователи и их группы</small>
+  </a>
+  <a class="shortcut-card shortcut-day-off" href="{{ url_for('days_off.index') }}">
+    <span class="glyphicon glyphicon-calendar" aria-hidden="true"></span>
+    <strong>Календарь выходных</strong><small>Отметить даты без занятий и рассылки</small>
+  </a>
+</div>
+{% endblock %}

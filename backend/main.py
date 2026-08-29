@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload, aliased
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy import asc
 from pydantic import BaseModel, ConfigDict
 
@@ -69,6 +69,12 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+@app.get("/health", include_in_schema=False)
+def healthcheck(db: Session = Depends(get_db)):
+    db.execute(text("SELECT 1"))
+    return {"status": "ok"}
 
 
 @app.get("/subjects")

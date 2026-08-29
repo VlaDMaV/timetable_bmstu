@@ -1,6 +1,8 @@
 import os
+import argparse
 import json
 import sys
+from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
@@ -32,7 +34,12 @@ TYPE_MAP = {
 }
 
 
-DATABASE_URL = "from .env"
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("DB_URL") or (
+    "postgresql+psycopg2://"
+    f"{os.getenv('DB_USER', 'postgres')}:{os.getenv('DB_PASSWORD', 'postgres')}"
+    f"@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}"
+    f"/{os.getenv('DB_NAME', 'timetable')}"
+)
 
 engine = create_engine(
     DATABASE_URL,
@@ -73,6 +80,7 @@ def get_or_create_by(db: Session, model, defaults=None, **kwargs):
 
 def parse_schedule(data):
     schedule_items = data.get("data", {}).get("schedule", [])
+    schedule_group_uuid = data.get("data", {}).get("uuid")
 
     teachers = set()
     subjects = set()
@@ -81,13 +89,17 @@ def parse_schedule(data):
     entries = []
 
     for item in schedule_items:
-        # teacher
-        t_data = item["teachers"][0] if item.get("teachers") else None
-        t_name = (
-            f"{t_data.get('lastName','').strip()} "
-            f"{t_data.get('firstName','').strip()} "
-            f"{t_data.get('middleName','').strip()}"
-        ).strip() if t_data else "Не указан"
+        # teachers: на странице БМГТУ одно занятие может вести несколько преподавателей
+        teacher_names = []
+        for teacher in item.get("teachers") or []:
+            full_name = (
+                f"{teacher.get('lastName', '').strip()} "
+                f"{teacher.get('firstName', '').strip()} "
+                f"{teacher.get('middleName', '').strip()}"
+            ).strip()
+            if full_name and full_name not in teacher_names:
+                teacher_names.append(full_name)
+        t_name = ", ".join(teacher_names) or "Не указан"
 
         teachers.add(t_name)
 
@@ -95,8 +107,13 @@ def parse_schedule(data):
         sub_name = item["discipline"]["fullName"]
         subjects.add(sub_name)
 
-        # place
-        p_name = item["audiences"][0]["name"] if item.get("audiences") else "Не указана"
+        # audiences: сохраняем все аудитории в том же порядке, что и на странице
+        audience_names = []
+        for audience in item.get("audiences") or []:
+            audience_name = (audience.get("name") or "").strip()
+            if audience_name and audience_name not in audience_names:
+                audience_names.append(audience_name)
+        p_name = ", ".join(audience_names) or "Не указана"
         places.add(p_name)
 
         # type
@@ -107,21 +124,23 @@ def parse_schedule(data):
         # week -> ords
         week_type = item.get("week")
 
-        # Вариант для нечётного семестра
-        # ords = [0] if week_type == "zn" else [1] if week_type == "ch" else [0, 1]
-
-        # Вариает для чётного семестра
+        # Тип недели в JSON не зависит от семестра: ch — числитель, zn — знаменатель.
         if week_type == "ch":        # числитель
-            ords = [0]
-        elif week_type == "zn":      # знаменатель
             ords = [1]
+        elif week_type == "zn":      # знаменатель
+            ords = [0]
         else:                        # all
             ords = [0, 1]
 
         # podgroup
         podgroup = 0
-        if item.get("stream") and item["stream"].get("groups"):
-            podgroup = item["stream"]["groups"][0].get("sub1", 0) or 0
+        stream_groups = (item.get("stream") or {}).get("groups") or []
+        if stream_groups:
+            group_stream = next(
+                (group for group in stream_groups if group.get("groupUuid") == schedule_group_uuid),
+                stream_groups[0],
+            )
+            podgroup = group_stream.get("sub1", 0) or 0
 
         # time slot (пара) — НУЖНО ИЗ JSON
         # попробуем найти распространённые поля
@@ -288,14 +307,28 @@ def read_json_from_stdin() -> dict:
         sys.exit(1)
 
 
+def read_json_file(path: Path) -> dict:
+    try:
+        with path.open(encoding="utf-8") as source:
+            return json.load(source)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"Ошибка чтения JSON из {path}: {e}")
+        sys.exit(1)
+
+
 # -------------------- usage --------------------
 if __name__ == "__main__":
-    raw_data = read_json_from_stdin() 
+    argument_parser = argparse.ArgumentParser(description="Импорт расписания группы БМГТУ")
+    argument_parser.add_argument("--file", type=Path, help="Путь к JSON; без параметра JSON читается из stdin")
+    argument_parser.add_argument("--group", help="Имя группы; по умолчанию берётся из data.title")
+    args = argument_parser.parse_args()
+
+    raw_data = read_json_file(args.file) if args.file else read_json_from_stdin()
     parsed = parse_schedule(raw_data)
 
-    print('Введите номер группы: ')
-    group_name_input=input()
-    group_name = group_name_input
+    group_name = (args.group or raw_data.get("data", {}).get("title", "")).strip()
+    if not group_name:
+        argument_parser.error("укажите --group или передайте data.title в JSON")
 
     for db in get_db():
         stats = save_schedule_to_db(db, parsed, group_name=group_name)

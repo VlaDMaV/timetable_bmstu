@@ -1,4 +1,10 @@
 
+x-logging: &default-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "2"
+
 services:
   backend:
     image: timetable_backend
@@ -10,11 +16,20 @@ services:
     environment:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
       DB_HOST: db
       DB_PORT: ${DB_PORT}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
     ports:
       - "8888:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 5m
+      timeout: 4s
+      retries: 3
+      start_period: 30s
+      start_interval: 5s
+    logging: *default-logging
     volumes:
       - ./backend:/app
       - ./common:/app/common
@@ -32,6 +47,7 @@ services:
       retries: 5
     ports:
       - "5432:5432"
+    logging: *default-logging
     volumes:
       - db_data:/var/lib/postgresql/data
 
@@ -42,16 +58,53 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      backend:
+        condition: service_healthy
     environment:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
       DB_HOST: db
       DB_PORT: ${DB_PORT}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_PUBLIC_URL: ${ADMIN_PUBLIC_URL:-}
+      ADMIN_CONTROL_DIR: /var/run/timetable-admin-control
       BOT_TOKEN: ${BOT_TOKEN}
       ADMIN_ID: ${ADMIN_ID}
+      SEMESTER_IS_ODD: ${SEMESTER_IS_ODD:-true}
+    logging: *default-logging
     volumes:
       - ./bot:/app
+      - ./common:/app/common
+      - admin_control:/var/run/timetable-admin-control
+
+  schedule-monitor:
+    image: timetable_schedule_monitor
+    build:
+      context: ./schedule_monitor
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DB_HOST: db
+      DB_PORT: ${DB_PORT}
+      BOT_TOKEN: ${BOT_TOKEN}
+      ADMIN_ID: ${ADMIN_ID}
+      SCHEDULE_MONITOR_TIMEZONE: ${SCHEDULE_MONITOR_TIMEZONE:-Europe/Moscow}
+      SCHEDULE_MONITOR_HOUR: ${SCHEDULE_MONITOR_HOUR:-9}
+      SCHEDULE_MONITOR_MINUTE: ${SCHEDULE_MONITOR_MINUTE:-0}
+      SCHEDULE_MONITOR_CONCURRENCY: ${SCHEDULE_MONITOR_CONCURRENCY:-3}
+      SCHEDULE_MONITOR_TIMEOUT: ${SCHEDULE_MONITOR_TIMEOUT:-20}
+      SCHEDULE_MONITOR_ATTEMPTS: ${SCHEDULE_MONITOR_ATTEMPTS:-5}
+      SCHEDULE_MONITOR_INCLUDE_ASPIRANTS: ${SCHEDULE_MONITOR_INCLUDE_ASPIRANTS:-false}
+      SCHEDULE_MONITOR_RUN_ON_START: ${SCHEDULE_MONITOR_RUN_ON_START:-false}
+    logging: *default-logging
+    restart: unless-stopped
+    volumes:
+      - ./schedule_monitor:/app/schedule_monitor
       - ./common:/app/common
 
   admin:
@@ -64,11 +117,30 @@ services:
     environment:
       DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
       SECRET_KEY: ${SECRET_KEY}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      ADMIN_URL_SECRET: ${ADMIN_URL_SECRET}
+      ADMIN_COOKIE_SECURE: ${ADMIN_COOKIE_SECURE:-false}
     ports:
-      - "5000:5000"
+      - "${ADMIN_BIND_ADDRESS:-0.0.0.0}:5555:5000"
+    logging: *default-logging
     volumes:
       - ./admin:/app
       - ./common:/app/common
 
+  admin-controller:
+    build:
+      context: ./admin_controller
+    environment:
+      ADMIN_CONTROL_DIR: /control
+      TARGET_COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-timetable_bmstu}
+    logging: *default-logging
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - admin_control:/control
+
 volumes:
   db_data:
+  admin_control:

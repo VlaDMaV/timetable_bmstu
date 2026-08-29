@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход — Расписание МГТУ</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <div class="brand-mark">Р</div>
+    <p class="eyebrow">Панель управления</p>
+    <h1>Расписание МГТУ</h1>
+    <p class="login-hint">Войдите, чтобы управлять расписанием и справочниками.</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="login-alert login-alert-{{ category }}" role="alert">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <form method="post" novalidate>
+      {{ form.hidden_tag() }}
+      <div class="login-field">
+        {{ form.username.label }}
+        {{ form.username(autofocus=true) }}
+        {% for error in form.username.errors %}<span class="field-error">{{ error }}</span>{% endfor %}
+      </div>
+      <div class="login-field">
+        {{ form.password.label }}
+        {{ form.password() }}
+        {% for error in form.password.errors %}<span class="field-error">{{ error }}</span>{% endfor %}
+      </div>
+      {{ form.submit(class_='login-submit') }}
+    </form>
+    <p class="security-note">Сессия автоматически завершится через 8 часов.</p>
+  </main>
+</body>
+</html>

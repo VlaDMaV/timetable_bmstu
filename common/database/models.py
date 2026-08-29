@@ -1,4 +1,6 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, BigInteger
+from datetime import datetime, timezone
+
+from sqlalchemy import BigInteger, CheckConstraint, Column, Date, DateTime, ForeignKey, Integer, String, Text, Time, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .base import Base
@@ -116,6 +118,12 @@ class Dayboard(Base):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint(
+            "notification_mode IN ('hour_before', 'same_day', 'day_before')",
+            name="ck_users_notification_mode",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     tg_id = Column(BigInteger, unique=True, nullable=False)
@@ -126,6 +134,9 @@ class User(Base):
 
     is_active = Column(Integer, default=1)
     title = Column(String, nullable=False)
+    notification_mode = Column(String, nullable=False, default="same_day")
+    notification_time = Column(Time, nullable=False, default=lambda: datetime.strptime("08:00", "%H:%M").time())
+    last_notification_date = Column(Date, nullable=True)
 
 
 class Settings(Base):
@@ -134,3 +145,91 @@ class Settings(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     key = Column(String, unique=True, nullable=False)
     value = Column(String, nullable=False)
+
+
+class DayOff(Base):
+    """Конкретная календарная дата, объявленная выходным днём."""
+
+    __tablename__ = "days_off"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    date = Column(Date, unique=True, nullable=False, index=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    def __str__(self):
+        return self.date.strftime("%d.%m.%Y")
+
+
+class ScheduleReview(Base):
+    """Одна проверка расписаний, ожидающая решения администратора."""
+
+    __tablename__ = "schedule_reviews"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    status = Column(String, nullable=False, default="pending", index=True)
+    telegram_summary_message_id = Column(BigInteger, nullable=True, index=True)
+    telegram_document_message_id = Column(BigInteger, nullable=True, index=True)
+    report_filename = Column(String, nullable=True)
+    error = Column(Text, nullable=True)
+
+    groups = relationship(
+        "ScheduleReviewGroup",
+        back_populates="review",
+        cascade="all, delete-orphan",
+    )
+
+
+class ScheduleReviewGroup(Base):
+    """Снимок одной изменившейся группы внутри проверки."""
+
+    __tablename__ = "schedule_review_groups"
+    __table_args__ = (
+        UniqueConstraint("review_id", "group_name", name="uq_schedule_review_group"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    review_id = Column(
+        Integer,
+        ForeignKey("schedule_reviews.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    group_name = Column(String, nullable=False, index=True)
+    display_name = Column(String, nullable=False)
+    source_uuid = Column(String, nullable=False)
+    source_payload = Column(Text, nullable=False)
+    added_count = Column(Integer, nullable=False, default=0)
+    removed_count = Column(Integer, nullable=False, default=0)
+    is_new_group = Column(Integer, nullable=False, default=0)
+    status = Column(String, nullable=False, default="pending", index=True)
+    applied_at = Column(DateTime(timezone=True), nullable=True)
+    error = Column(Text, nullable=True)
+
+    review = relationship("ScheduleReview", back_populates="groups")
+
+
+class ScheduleMonitorRun(Base):
+    """Ручной запуск мониторинга, поставленный в очередь Telegram-ботом."""
+
+    __tablename__ = "schedule_monitor_runs"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    requested_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    requested_by = Column(BigInteger, nullable=False)
+    status = Column(String, nullable=False, default="queued", index=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    error = Column(Text, nullable=True)

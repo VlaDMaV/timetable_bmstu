@@ -1,0 +1,49 @@
+{% extends 'admin/custom_master.html' %}
+
+{% block body %}
+<section class="calendar-page-header">
+  <div>
+    <p class="eyebrow">Учебный календарь</p>
+    <h1>Календарь выходных</h1>
+    <p>Нажмите на дату, чтобы отметить её выходным. Повторное нажатие удалит отметку.</p>
+  </div>
+  <div class="calendar-legend"><span></span> Выходной — рассылка расписания отключена</div>
+</section>
+
+<section class="calendar-card">
+  <header class="calendar-toolbar">
+    <a class="calendar-nav" href="{{ url_for('days_off.index', month=previous_month) }}" aria-label="Предыдущий месяц">
+      <span class="glyphicon glyphicon-chevron-left" aria-hidden="true"></span>
+    </a>
+    <h2>{{ month_name }} {{ year }}</h2>
+    <a class="calendar-nav" href="{{ url_for('days_off.index', month=next_month) }}" aria-label="Следующий месяц">
+      <span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>
+    </a>
+  </header>
+
+  <div class="month-calendar" role="grid" aria-label="{{ month_name }} {{ year }}">
+    {% for weekday in ('Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс') %}
+      <div class="weekday-name" role="columnheader">{{ weekday }}</div>
+    {% endfor %}
+    {% for week in weeks %}
+      {% for day in week %}
+        {% if day.month == month %}
+          <form class="calendar-day-form" method="post" action="{{ url_for('days_off.toggle') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="date" value="{{ day.isoformat() }}">
+            <input type="hidden" name="month" value="{{ month_value }}">
+            <button type="submit"
+                    class="calendar-day{% if day in days_off %} is-day-off{% endif %}{% if day == today %} is-today{% endif %}"
+                    aria-label="{{ day.strftime('%d.%m.%Y') }}{% if day in days_off %}, выходной, удалить отметку{% else %}, отметить выходным{% endif %}">
+              <span class="day-number">{{ day.day }}</span>
+              {% if day in days_off %}<span class="day-status">Выходной</span>{% endif %}
+            </button>
+          </form>
+        {% else %}
+          <div class="calendar-day is-outside" role="gridcell"><span class="day-number">{{ day.day }}</span></div>
+        {% endif %}
+      {% endfor %}
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

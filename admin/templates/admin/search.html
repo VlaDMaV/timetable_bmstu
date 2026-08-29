@@ -1,0 +1,52 @@
+{% extends 'admin/custom_master.html' %}
+
+{% block body %}
+<div class="search-page-header">
+  <p class="eyebrow">Единый поиск</p>
+  <h1>{% if query %}Результаты для «{{ query }}»{% else %}Поиск по всей базе{% endif %}</h1>
+  <form class="hero-search" method="get" action="{{ url_for('admin.search') }}">
+    <div class="input-group input-group-lg">
+      <input class="form-control" type="search" name="q" value="{{ query }}" autofocus
+             minlength="2" maxlength="100" placeholder="Введите минимум 2 символа">
+      <span class="input-group-btn"><button class="btn btn-primary" type="submit">Найти</button></span>
+    </div>
+  </form>
+</div>
+
+{% if query and query|length < 2 %}
+  <div class="empty-state">Введите минимум 2 символа.</div>
+{% elif results %}
+  {% set found = namespace(value=false) %}
+  {% for section, items in results.items() %}
+    {% if items %}
+      {% set found.value = true %}
+      <section class="result-section">
+        <h2>{{ section }} <span class="result-count">{{ items|length }}</span></h2>
+        <div class="result-list">
+          {% for item in items %}
+            {% if section == 'Расписание' %}
+              <a href="{{ url_for('dayboard.edit_view', id=item.id, url=request.url) }}">
+                <strong>{{ item.group_rel }} · {{ item.subject_rel }}</strong>
+                <span>{{ item.teacher_rel }} · {{ item.day_rel }} · {{ item.time_rel }} · {{ item.place_rel }}</span>
+              </a>
+            {% elif section == 'Группы' %}
+              <a href="{{ url_for('group.edit_view', id=item.id, url=request.url) }}"><strong>{{ item.name }}</strong></a>
+            {% elif section == 'Преподаватели' %}
+              <a href="{{ url_for('teacher.edit_view', id=item.id, url=request.url) }}"><strong>{{ item.full_name }}</strong></a>
+            {% elif section == 'Предметы' %}
+              <a href="{{ url_for('subject.edit_view', id=item.id, url=request.url) }}"><strong>{{ item.name }}</strong></a>
+            {% elif section == 'Аудитории' %}
+              <a href="{{ url_for('place.edit_view', id=item.id, url=request.url) }}"><strong>{{ item.name }}</strong></a>
+            {% elif section == 'Пользователи' %}
+              <a href="{{ url_for('user.edit_view', id=item.id, url=request.url) }}">
+                <strong>{{ item.username }}</strong><span>{{ item.group_rel or 'Без группы' }} · Telegram ID {{ item.tg_id }}</span>
+              </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+  {% endfor %}
+  {% if not found.value %}<div class="empty-state">Ничего не найдено. Проверьте запрос или попробуйте его сократить.</div>{% endif %}
+{% endif %}
+{% endblock %}
