@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.filters import Command, CommandStart
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ChatMemberUpdated, ForceReply
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -80,6 +80,55 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+GROUP_SETTINGS_DENIED = "❌ Менять настройки может только тот, кто добавил бота в группу."
+
+
+async def _can_change_chat_settings(event, db: Session) -> bool:
+    is_callback = isinstance(event, CallbackQuery) or hasattr(event, "message")
+    message = event.message if is_callback else event
+    if message.chat.type == "private":
+        return True
+    user = db.query(models.User).filter_by(tg_id=message.chat.id).first()
+    actor = event.from_user
+    if (
+        message.chat.type in ("group", "supergroup")
+        and user
+        and actor
+        and not actor.is_bot
+        and (is_callback or not message.sender_chat)
+        and user.settings_owner_tg_id == actor.id
+    ):
+        return True
+    text = GROUP_SETTINGS_DENIED
+    if user and user.settings_owner_tg_id is None:
+        text += " Владелец старой привязки не определён; обратитесь к администратору бота."
+    await event.answer(text, **({"show_alert": True} if is_callback else {}))
+    return False
+
+
+@router.my_chat_member()
+async def bot_added_to_group(event: ChatMemberUpdated, db: Session):
+    if event.chat.type not in ("group", "supergroup"):
+        return
+
+    def is_member(member):
+        return member.status in ("member", "administrator", "creator") or (
+            member.status == "restricted" and member.is_member
+        )
+
+    if is_member(event.old_chat_member) or not is_member(event.new_chat_member):
+        return
+    if event.from_user.is_bot:
+        return
+    user = db.query(models.User).filter_by(tg_id=event.chat.id).first()
+    if not user:
+        user = models.User(tg_id=event.chat.id, is_active=0)
+        db.add(user)
+    user.settings_owner_tg_id = event.from_user.id
+    user.username = event.from_user.username or f"user_{event.from_user.id}"
+    user.title = event.chat.title or event.chat.type
+    db.commit()
+
 
 def department_display_ru(dep: str) -> str:
     """
@@ -134,6 +183,8 @@ def filter_groups_by_search(groups, query: str):
 
 @router.callback_query(F.data.startswith("choose_department:"))
 async def choose_department(callback: CallbackQuery, db: Session):
+    if not await _can_change_chat_settings(callback, db):
+        return
     _, faculty, degree, course_str, department = callback.data.split(":")
     course = int(course_str)
     department = department.lower()
@@ -327,7 +378,9 @@ def filter_groups(groups, faculty: str, degree: str, course: int | None = None):
 
 
 @router.callback_query(F.data.startswith("back_to_course:"))
-async def back_to_course(callback: CallbackQuery):
+async def back_to_course(callback: CallbackQuery, db: Session):
+    if not await _can_change_chat_settings(callback, db):
+        return
     _, faculty, degree = callback.data.split(":")
     await callback.message.edit_text(
         "Выберите курс:",
@@ -439,7 +492,9 @@ def get_course_keyboard(faculty: str, degree: str):
 
 
 @router.callback_query(F.data == "back_to_faculty")
-async def back_to_faculty(callback: CallbackQuery, state: FSMContext):
+async def back_to_faculty(callback: CallbackQuery, state: FSMContext, db: Session):
+    if not await _can_change_chat_settings(callback, db):
+        return
     await state.clear()
     await callback.message.edit_text(
         GROUP_SELECTION_TEXT,
@@ -449,7 +504,9 @@ async def back_to_faculty(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("choose_faculty:"))
-async def choose_faculty(callback: CallbackQuery, state: FSMContext):
+async def choose_faculty(callback: CallbackQuery, state: FSMContext, db: Session):
+    if not await _can_change_chat_settings(callback, db):
+        return
     await state.clear()
     faculty = callback.data.split(":")[1]
     await callback.message.edit_text(
@@ -460,7 +517,9 @@ async def choose_faculty(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("back_to_degree:"))
-async def back_to_degree(callback: CallbackQuery):
+async def back_to_degree(callback: CallbackQuery, db: Session):
+    if not await _can_change_chat_settings(callback, db):
+        return
     faculty = callback.data.split(":")[1]
     await callback.message.edit_text(
         "Выберите уровень обучения:",
@@ -470,7 +529,9 @@ async def back_to_degree(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("choose_degree:"))
-async def choose_degree(callback: CallbackQuery):
+async def choose_degree(callback: CallbackQuery, db: Session):
+    if not await _can_change_chat_settings(callback, db):
+        return
     _, faculty, degree = callback.data.split(":")
 
     await callback.message.edit_text(
@@ -482,6 +543,8 @@ async def choose_degree(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("choose_course:"))
 async def choose_course(callback: CallbackQuery, db: Session):
+    if not await _can_change_chat_settings(callback, db):
+        return
     _, faculty, degree, course_str = callback.data.split(":")
     course = int(course_str)
 
@@ -525,6 +588,8 @@ async def choose_course(callback: CallbackQuery, db: Session):
 
 @router.callback_query(F.data.startswith("group_page:"))
 async def paginate_groups(callback: CallbackQuery, db: Session):
+    if not await _can_change_chat_settings(callback, db):
+        return
     _, faculty, degree, course_str, department, page_str = callback.data.split(":")
     course = int(course_str)
     page = int(page_str)
@@ -854,7 +919,9 @@ def find_teachers(db: Session, query: str):
 
 
 @router.callback_query(F.data == "search_group")
-async def start_group_search(callback: CallbackQuery, state: FSMContext):
+async def start_group_search(callback: CallbackQuery, state: FSMContext, db: Session):
+    if not await _can_change_chat_settings(callback, db):
+        return
     await state.set_state(GroupSearchStates.waiting_for_query)
     await state.update_data(group_search_query=None)
     await callback.message.edit_text(
@@ -868,6 +935,9 @@ async def start_group_search(callback: CallbackQuery, state: FSMContext):
 
 @router.message(GroupSearchStates.waiting_for_query, F.text, ~F.text.startswith("/"))
 async def search_group_by_name(message: Message, state: FSMContext, db: Session):
+    if not await _can_change_chat_settings(message, db):
+        await state.clear()
+        return
     query = message.text.strip()
     if not query:
         await message.answer("Введите хотя бы один символ названия группы.")
@@ -894,6 +964,8 @@ async def search_group_by_name(message: Message, state: FSMContext, db: Session)
 
 @router.callback_query(F.data.startswith("group_search_page:"))
 async def paginate_group_search(callback: CallbackQuery, state: FSMContext, db: Session):
+    if not await _can_change_chat_settings(callback, db):
+        return
     page = int(callback.data.split(":")[1])
     query = (await state.get_data()).get("group_search_query")
     if not query:
@@ -1195,6 +1267,8 @@ async def submit_feedback_reply(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "subscribe")
 async def subscribe_user(callback: CallbackQuery, db: Session):
+    if not await _can_change_chat_settings(callback, db):
+        return
     await callback.answer()
     user = db.query(models.User).filter(models.User.tg_id == callback.message.chat.id).first()
     if user:
@@ -1211,8 +1285,7 @@ async def subscribe_user(callback: CallbackQuery, db: Session):
 
 @router.callback_query(F.data == "unsubscribe")
 async def unsubscribe_user(callback: CallbackQuery, db: Session):
-    if callback.message.chat.type != "private":
-        await callback.answer("❌ Отписка доступна только в личных сообщениях с ботом.\nЕсли вы хотите отписать группу от рассылки, напишите @vladmav_11.", show_alert=True)
+    if not await _can_change_chat_settings(callback, db):
         return
 
     await callback.answer()
@@ -1244,12 +1317,8 @@ def _notification_settings_text(user: models.User) -> str:
     )
 
 
-async def _get_subscribed_private_user(callback: CallbackQuery, db: Session):
-    if callback.message.chat.type != "private":
-        await callback.answer(
-            "Настройка времени доступна только в личных сообщениях с ботом.",
-            show_alert=True,
-        )
+async def _get_subscribed_settings_user(callback: CallbackQuery, db: Session):
+    if not await _can_change_chat_settings(callback, db):
         return None
     user = db.query(models.User).filter(models.User.tg_id == callback.message.chat.id).first()
     if not user or not user.is_active:
@@ -1260,7 +1329,7 @@ async def _get_subscribed_private_user(callback: CallbackQuery, db: Session):
 
 @router.callback_query(F.data == "notification_settings")
 async def notification_settings(callback: CallbackQuery, state: FSMContext, db: Session):
-    user = await _get_subscribed_private_user(callback, db)
+    user = await _get_subscribed_settings_user(callback, db)
     if not user:
         return
     await callback.answer()
@@ -1275,7 +1344,7 @@ async def notification_settings(callback: CallbackQuery, state: FSMContext, db: 
 
 @router.callback_query(F.data == "notification_choose_time")
 async def notification_choose_time(callback: CallbackQuery, state: FSMContext, db: Session):
-    user = await _get_subscribed_private_user(callback, db)
+    user = await _get_subscribed_settings_user(callback, db)
     if not user:
         return
     await callback.answer()
@@ -1289,7 +1358,7 @@ async def notification_choose_time(callback: CallbackQuery, state: FSMContext, d
 
 @router.callback_query(F.data == "notification_mode:hour_before")
 async def notification_hour_before(callback: CallbackQuery, state: FSMContext, db: Session):
-    user = await _get_subscribed_private_user(callback, db)
+    user = await _get_subscribed_settings_user(callback, db)
     if not user:
         return
     user.notification_mode = "hour_before"
@@ -1307,7 +1376,7 @@ async def notification_hour_before(callback: CallbackQuery, state: FSMContext, d
 
 @router.callback_query(F.data.startswith("notification_timing:"))
 async def notification_timing(callback: CallbackQuery, state: FSMContext, db: Session):
-    user = await _get_subscribed_private_user(callback, db)
+    user = await _get_subscribed_settings_user(callback, db)
     if not user:
         return
     mode = callback.data.split(":", 1)[1]
@@ -1318,6 +1387,15 @@ async def notification_timing(callback: CallbackQuery, state: FSMContext, db: Se
     timing_text = "за день до занятий" if mode == "day_before" else "в день занятий"
     await state.set_state(NotificationStates.waiting_for_time)
     await state.update_data(notification_mode=mode)
+    if callback.message.chat.type in ("group", "supergroup"):
+        await callback.message.answer(
+            f'<a href="tg://user?id={callback.from_user.id}">Владелец настроек</a>, '
+            f"выбрано: <b>{timing_text}</b>.\n"
+            "Ответьте на это сообщение временем в формате <b>ЧЧ:ММ</b>, например <code>08:30</code>.",
+            parse_mode="HTML",
+            reply_markup=ForceReply(selective=True, input_field_placeholder="08:30"),
+        )
+        return
     await safe_edit_text(
         callback.message,
         f"Выбрано: <b>{timing_text}</b>.\n\n"
@@ -1330,6 +1408,9 @@ async def notification_timing(callback: CallbackQuery, state: FSMContext, db: Se
 
 @router.message(NotificationStates.waiting_for_time, F.text, ~F.text.startswith("/"))
 async def notification_time_input(message: Message, state: FSMContext, db: Session):
+    if not await _can_change_chat_settings(message, db):
+        await state.clear()
+        return
     mode = (await state.get_data()).get("notification_mode")
     if mode not in ("same_day", "day_before"):
         await state.clear()
@@ -1339,10 +1420,18 @@ async def notification_time_input(message: Message, state: FSMContext, db: Sessi
     raw_time = message.text.strip()
     parsed_time = parse_notification_time(raw_time)
     if parsed_time is None:
+        mention = (
+            f'<a href="tg://user?id={message.from_user.id}">Владелец настроек</a>, '
+            if message.chat.type in ("group", "supergroup") else ""
+        )
         await message.answer(
-            "Некорректное время. Введите его в формате <b>ЧЧ:ММ</b>, например <code>08:30</code>.",
+            mention + "Некорректное время. Введите его в формате <b>ЧЧ:ММ</b>, например <code>08:30</code>.",
             parse_mode="HTML",
-            reply_markup=kb.notification_time_keyboard(),
+            reply_markup=(
+                ForceReply(selective=True, input_field_placeholder="08:30")
+                if message.chat.type in ("group", "supergroup")
+                else kb.notification_time_keyboard()
+            ),
         )
         return
 
@@ -1377,6 +1466,8 @@ async def back_to_main(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("choose_group:"))
 async def choose_group(callback: CallbackQuery, state: FSMContext, db: Session):
+    if not await _can_change_chat_settings(callback, db):
+        return
     group_id = int(callback.data.split(":")[1])
 
     chosen_group = db.query(models.Group).filter(models.Group.id == group_id).first()
@@ -1392,7 +1483,7 @@ async def choose_group(callback: CallbackQuery, state: FSMContext, db: Session):
             user_group.group_id = chosen_group.id
             db.commit()
             await callback.message.edit_text(
-                f"✅ Для группы <b>{user_group.title}</b> выбрана учебная группа <b>{cs.group_display_name(chosen_group.name)}</b>",
+                f"✅ Для группы <b>{escape(user_group.title)}</b> выбрана учебная группа <b>{cs.group_display_name(chosen_group.name)}</b>",
                 parse_mode="HTML",
                 reply_markup=kb.back_to_main
             )
@@ -1818,8 +1909,7 @@ async def current_lesson(callback: CallbackQuery, db: Session):
 
 @router.callback_query(F.data.startswith("change_group"))
 async def change_group(callback: CallbackQuery, state: FSMContext, db: Session):
-    if callback.message.chat.type != "private":
-        await callback.answer("❌ Смена группы доступна только в личных сообщениях с ботом.\nЕсли вы хотите сменить группу от рассылки, напишите @vladmav_11.", show_alert=True)
+    if not await _can_change_chat_settings(callback, db):
         return
 
     await callback.answer()

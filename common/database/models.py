@@ -128,6 +128,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     tg_id = Column(BigInteger, unique=True, nullable=False)
     username = Column(String, unique=False, nullable=False)
+    settings_owner_tg_id = Column(BigInteger, nullable=True)
 
     group_id = Column(Integer, ForeignKey("groups.id"), nullable=True)
     group_rel = relationship("Group", back_populates="users")

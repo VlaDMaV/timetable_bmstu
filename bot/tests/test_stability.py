@@ -109,7 +109,7 @@ class FakeState:
 
 class FakeTextMessage:
     def __init__(self, tg_id, text):
-        self.chat = SimpleNamespace(id=tg_id)
+        self.chat = SimpleNamespace(id=tg_id, type="private")
         self.text = text
         self.sent = []
 
